@@ -1,0 +1,55 @@
+{
+  "name": "pg-diff",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/pg-diff/src",
+  "projectType": "application",
+  "tags": [],
+  "targets": {
+    "build": {
+      "executor": "@nx/esbuild:esbuild",
+      "outputs": ["{options.outputPath}"],
+      "defaultConfiguration": "production",
+      "options": {
+        "platform": "node",
+        "outputPath": "dist/apps/pg-diff",
+        "format": ["esm"],
+        "bundle": false,
+        "main": "apps/pg-diff/src/index.ts",
+        "tsConfig": "apps/pg-diff/tsconfig.app.json",
+        "generatePackageJson": true,
+        "esbuildOptions": {
+          "sourcemap": true,
+          "outExtension": {
+            ".js": ".js"
+          }
+        }
+      },
+      "configurations": {
+        "development": {},
+        "production": {
+          "esbuildOptions": {
+            "sourcemap": false,
+            "outExtension": {
+              ".js": ".js"
+            }
+          }
+        }
+      }
+    },
+    "serve": {
+      "executor": "@nx/js:node",
+      "defaultConfiguration": "development",
+      "options": {
+        "buildTarget": "pg-diff:build"
+      },
+      "configurations": {
+        "development": {
+          "buildTarget": "pg-diff:build:development"
+        },
+        "production": {
+          "buildTarget": "pg-diff:build:production"
+        }
+      }
+    }
+  }
+}
