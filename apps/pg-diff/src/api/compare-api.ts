@@ -1,7 +1,7 @@
 import { CatalogApi } from './catalog-api';
 import { core } from '../core';
 import {
-  Aggregate,
+  AggregateDefinition,
   Column,
   ConstraintDefinition,
   DatabaseObjects,
@@ -266,7 +266,6 @@ export class CompareApi {
 
     sqlPatch.push(
       ...this.compareAggregates(
-        dbSourceObjects.functions,
         dbSourceObjects.aggregates,
         dbTargetObjects.aggregates,
         config
@@ -1174,8 +1173,8 @@ export class CompareApi {
   }
 
   static compareProcedures(
-    sourceFunctions: Record<string, FunctionDefinition>,
-    targetFunctions: Record<string, FunctionDefinition>,
+    sourceFunctions: Record<string, Record<string, FunctionDefinition>>,
+    targetFunctions: Record<string, Record<string, FunctionDefinition>>,
     config: Config
   ) {
     let finalizedScript: string[] = [];
@@ -1309,9 +1308,8 @@ export class CompareApi {
   }
 
   static compareAggregates(
-    sourceFunctions: Record<string, FunctionDefinition>,
-    sourceAggregates: Record<string, Aggregate>,
-    targetAggregates: Record<string, Aggregate>,
+    sourceAggregates: Record<string, AggregateDefinition>,
+    targetAggregates: Record<string, AggregateDefinition>,
     config: Config
   ) {
     let finalizedScript: string[] = [];

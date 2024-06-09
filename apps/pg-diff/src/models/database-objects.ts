@@ -48,18 +48,9 @@ export interface ViewDefinition {
 }
 export interface Schema {
   owner: string;
-  startValue: string;
-  minValue: string;
-  maxValue: string;
-  increment: string;
-  cacheSize: string;
-  isCycle: boolean;
-  name: string;
-  ownedBy: string | null;
-  privileges: Privileges;
   comment: string | null;
 }
-type DataTypeCategory =
+export type DataTypeCategory =
   | 'D' // DATE TIME
   | 'V' // BIT
   | 'S' // STRING
@@ -105,7 +96,7 @@ export interface Column {
   generatedColumn: string | null;
 }
 export interface TableOptions {
-  withOids?: number;
+  withOids?: string;
 }
 export interface TableObject {
   columns: Record<string, Column>;
@@ -119,7 +110,7 @@ export interface TableObject {
 export interface MaterializedViewDefinition extends ViewDefinition {
   indexes: Record<string, IndexDefinition>;
 }
-export interface Aggregate {}
+export interface AggregateDefinition {}
 export interface Sequence {
   owner: string;
   startValue: string;
@@ -138,7 +129,7 @@ export interface DatabaseObjects {
   tables: Record<string, TableObject>;
   views: Record<string, ViewDefinition>;
   materializedViews: Record<string, MaterializedViewDefinition>;
-  functions: { [args: string]: FunctionDefinition };
-  aggregates: Record<string, Aggregate>;
+  functions: Record<string, Record<string, FunctionDefinition>>;
+  aggregates: Record<string, AggregateDefinition>;
   sequences: Record<string, Sequence>;
 }
