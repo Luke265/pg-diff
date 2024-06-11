@@ -1,15 +1,15 @@
-import sql from '../sql-script-generator';
-import { core } from '../core';
-import patchStatus from '../enums/patch-status';
+import * as sql from './sql-script-generator';
+import { core } from './core';
+import patchStatus from './enums/patch-status';
 import path from 'path';
 import fs from 'fs';
-import { PatchInfo } from '../models/patch-info';
+import { PatchInfo } from './models/patch-info';
 import { Client } from 'pg';
-import { MigrationConfig } from '../models/migration-config';
-import { Config } from '../models/config';
+import { MigrationConfig } from './models/migration-config';
+import { Config } from './models/config';
 import { EventEmitter, once } from 'events';
 import readline from 'readline';
-import { getServerVersion } from '../utils';
+import { getServerVersion } from './utils';
 
 export class MigrationApi {
   static async migrate(
@@ -339,7 +339,7 @@ export class MigrationApi {
       changes
     );
 
-    await pgClient.query(command);
+    await pgClient.query(command.toString());
   }
 
   static async addRecordToHistoryTable(

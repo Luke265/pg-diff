@@ -7,9 +7,8 @@ import { ServerVersion } from './models/server-version';
 import { Config } from './models/config';
 import { Client } from 'pg';
 import { ClientConfig } from './models/client-config';
-import { execSync } from 'child_process';
 import { MigrationConfig } from './models/migration-config';
-import { TableObject } from './models/database-objects';
+import { TableObject } from './catalog/database-objects';
 
 export class core {
   static prepareMigrationConfig(config: Config): MigrationConfig {
@@ -133,80 +132,5 @@ export class core {
       serverVersion.major >= majorVersion &&
       serverVersion.minor >= minorVersion
     );
-  }
-
-  /**
-   * Retrive GIT CONFIG for USER NAME and USER EMAIL, repository first or fallback to global config
-   * @returns {String}
-   */
-  static async getGitAuthor() {
-    function getLocalAuthorName(): string {
-      try {
-        return execSync('git config --local user.name').toString().trim();
-      } catch (err) {
-        return err as string;
-      }
-    }
-
-    function getLocalAuthorEmail() {
-      try {
-        return execSync('git config --local user.email').toString().trim();
-      } catch (err) {
-        return err as string;
-      }
-    }
-
-    function getGlobalAuthorName() {
-      try {
-        return execSync('git config --global user.user').toString().trim();
-      } catch (err) {
-        return err as string;
-      }
-    }
-
-    function getGlobalAuthorEmail() {
-      try {
-        return execSync('git config --global user.email').toString().trim();
-      } catch (err) {
-        return err as string;
-      }
-    }
-
-    function getDefaultAuthorName() {
-      try {
-        return execSync('git config user.name').toString().trim();
-      } catch (err) {
-        return err as string;
-      }
-    }
-
-    function getDefaultAuthorEmail() {
-      try {
-        return execSync('git config user.email').toString().trim();
-      } catch (err) {
-        return err as string;
-      }
-    }
-
-    let authorName = getLocalAuthorName();
-    let authorEmail = getLocalAuthorEmail();
-
-    if (!authorName) {
-      //GIT LOCAL didn't return anything! Try GIT GLOBAL.
-
-      authorName = getGlobalAuthorName();
-      authorEmail = getGlobalAuthorEmail();
-
-      if (!authorName) {
-        //Also GIT GLOBAL didn't return anything! Try GIT defaults.
-
-        authorName = getDefaultAuthorName();
-        authorEmail = getDefaultAuthorEmail();
-      }
-    }
-
-    if (!authorName) return 'Unknown author configured on this Git Repository';
-    else if (authorEmail) return `${authorName} (${authorEmail})`;
-    else return authorName;
   }
 }

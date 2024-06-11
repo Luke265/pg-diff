@@ -1,34 +1,3 @@
-import { SqlRef } from '../../stmt';
-
-export function commentIsEqual(
-  a: string | null | undefined,
-  b: string | null | undefined
-) {
-  return a === b || (!a && !b);
-}
-
-export interface ColumnChanges {
-  datatype?: any;
-  dataTypeID?: any;
-  dataTypeCategory?: any;
-  precision?: any;
-  scale?: any;
-  nullable?: any;
-  default?: any;
-  defaultRef?: SqlRef;
-  identity?: any;
-  isNewIdentity?: any;
-  truncate?: any;
-  references?: any;
-  trigger?: any;
-  select?: any;
-  insert?: any;
-  update?: any;
-  delete?: any;
-  execute?: any;
-  usage?: any;
-}
-
 const typeNameRegex = /"?((\w+)"?\."?(\w+)+)"?/g;
 export function* extractTypeNames(sqlFunctionBody: string) {
   let match: RegExpExecArray;

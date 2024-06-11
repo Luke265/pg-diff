@@ -1,9 +1,9 @@
-import objectType from '../../enums/object-type';
-import { Config } from '../../models/config';
-import { Type, Column } from '../../models/database-objects';
-import { Sql } from '../../stmt';
+import objectType from '../enums/object-type';
+import { Config } from '../models/config';
+import { Type, Column } from '../catalog/database-objects';
+import { Sql } from '../stmt';
 import { ColumnChanges, commentIsEqual } from './utils';
-import * as sql from '../../sql-script-generator';
+import * as sql from '../sql-script-generator';
 
 export function compareTypes(
   source: Record<string, Type>,
@@ -14,11 +14,9 @@ export function compareTypes(
   for (const name in source) {
     const sourceObj = source[name];
     const targetObj = target[name];
-    let actionLabel = '';
 
     if (targetObj) {
       //Table exists on both database, then compare table schema
-      actionLabel = 'ALTER';
 
       if (targetObj.enum) {
         //TODO: alter enum
@@ -44,7 +42,6 @@ export function compareTypes(
       }
     } else {
       //Table not exists on target database, then generate the script to create table
-      actionLabel = 'CREATE';
       sqlScript.push(sql.generateCreateTypeScript(sourceObj));
       if (sourceObj.comment) {
         sqlScript.push(
@@ -136,7 +133,7 @@ function compareTableColumn(table: string, source: Column, target: Column) {
 
   if (source.default != target.default) {
     changes.default = source.default;
-    changes.defaultRef = source.defaultRef;
+    changes.defaultRefs = source.defaultRefs;
   }
 
   if (source.identity != target.identity) {

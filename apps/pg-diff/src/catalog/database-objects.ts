@@ -108,12 +108,11 @@ export interface Column {
   dataTypeID: number;
   dataTypeCategory: DataTypeCategory;
   default: string | null;
-  defaultFunctionIds: number[];
+  defaultRefs: number[];
   functionReferences: FunctionDefinition[];
   precision: number | null;
   scale: number | null;
   identity: string | null;
-  defaultRef: SqlRef;
   comment: string | null;
   generatedColumn: string | null;
 }

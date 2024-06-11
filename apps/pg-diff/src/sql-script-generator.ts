@@ -1,4 +1,4 @@
-import { ColumnChanges } from './api/compare/utils';
+import { ColumnChanges } from './compare/utils';
 import objectType from './enums/object-type';
 import {
   AggregateDefinition,
@@ -15,7 +15,7 @@ import {
   TableOptions,
   Type,
   ViewDefinition,
-} from './models/database-objects';
+} from './catalog/database-objects';
 import { Sql, declaration, dependency, join, stmt } from './stmt';
 
 const hints = {
@@ -48,18 +48,22 @@ const policyForMap = {
 
 export function generateColumnDataTypeDefinition(schema: ColumnChanges) {
   if (schema.precision) {
-    let dataTypeScale = schema.scale ? `,${schema.scale}` : '';
-    return stmt`${dependency(schema.dataTypeID, schema.datatype)}(${
+    const dataTypeScale = schema.scale ? `,${schema.scale}` : '';
+    return stmt`${dependency(schema.datatype, schema.dataTypeID)}(${
       schema.precision
     }${dataTypeScale})`;
   }
-  return stmt`${dependency(schema.dataTypeID, schema.datatype)}`;
+  return stmt`${dependency(schema.datatype, schema.dataTypeID)}`;
 }
 export function generateColumnDefinition(schema: Column) {
   let nullableExpression = schema.nullable ? 'NULL' : 'NOT NULL';
 
   let defaultValue: Sql;
-  if (schema.default) defaultValue = stmt`DEFAULT ${schema.defaultRef}`;
+  if (schema.default)
+    defaultValue = stmt`DEFAULT ${dependency(
+      schema.default,
+      schema.defaultRefs
+    )}`;
 
   let identityValue = '';
   if (schema.identity)
@@ -67,7 +71,10 @@ export function generateColumnDefinition(schema: Column) {
 
   if (schema.generatedColumn) {
     nullableExpression = '';
-    defaultValue = stmt`GENERATED ALWAYS AS ${schema.defaultRef} STORED`;
+    defaultValue = stmt`GENERATED ALWAYS AS ${dependency(
+      schema.default,
+      schema.defaultRefs
+    )} STORED`;
     identityValue = '';
   }
 
@@ -164,8 +171,8 @@ export function generateChangeCommentScript(
   const description = comment ? `'${comment.replaceAll("'", "''")}'` : 'NULL';
   const parentObject = parentObjectName ? `ON ${parentObjectName}` : '';
   return stmt`COMMENT ON ${dependency(
-    id,
-    objectType
+    objectType,
+    id
   )} ${objectName} ${parentObject} IS ${description};`;
 }
 /**
@@ -211,12 +218,15 @@ export function generateCreateDomainScript(schema: Domain) {
   return stmt`CREATE DOMAIN ${declaration(
     schema.id,
     schema.fullName
-  )} AS ${dependency(schema.type.id, schema.type.fullName)} ${schema.check};`;
+  )} AS ${dependency(schema.type.fullName, schema.type.id)} ${schema.check};`;
 }
 export function generateTypeColumnDefinition(schema: Column) {
   let defaultValue: Sql;
   if (schema.default) {
-    defaultValue = stmt`DEFAULT ${schema.defaultRef}`;
+    defaultValue = stmt`DEFAULT ${dependency(
+      schema.default,
+      schema.defaultRefs
+    )}`;
   }
   let dataType = generateColumnDataTypeDefinition(schema);
   return stmt`${schema.name} ${dataType} ${defaultValue}`;
@@ -232,8 +242,8 @@ export function generateCreateTableScript(table: string, schema: TableObject) {
     const constraint = schema.constraints[name];
     columns.push(
       stmt`CONSTRAINT ${name} ${dependency(
-        constraint.relid,
-        constraint.definition
+        constraint.definition,
+        constraint.relid
       )} `
     );
   }
@@ -305,8 +315,8 @@ ${join(indexesComment, '\n')}`;
 }
 export function generateAddTypeColumnScript(schema: Type, column: Column) {
   return stmt`ALTER TYPE ${dependency(
-    schema.id,
-    schema.fullName
+    schema.fullName,
+    schema.id
   )} ADD ATTRIBUTE ${generateTypeColumnDefinition(column)};`;
 }
 export function generateAddTableColumnScript(table: string, column: Column) {
@@ -347,9 +357,9 @@ export function generateChangeTableColumnScript(
 
   if (changes['default'] !== undefined) {
     definitions.push(
-      stmt`ALTER COLUMN ${column} ${changes.default ? 'SET' : 'DROP'} DEFAULT ${
-        changes.defaultRef
-      }`
+      stmt`ALTER COLUMN ${column} ${
+        changes.default ? 'SET' : 'DROP'
+      } DEFAULT ${dependency(changes.default, changes.defaultRefs)}`
     );
   }
 
@@ -377,8 +387,8 @@ export function generateChangeTableColumnScript(
 }
 export function generateDropTypeColumnScript(table: Type, column: Column) {
   return stmt`ALTER TABLE IF EXISTS ${dependency(
-    table.id,
-    table.fullName
+    table.fullName,
+    table.id
   )} DROP COLUMN IF EXISTS ${column.name} CASCADE;`;
 }
 export function generateDropTableColumnScript(
@@ -396,11 +406,11 @@ export function generateAddTableConstraintScript(
   schema: ConstraintDefinition
 ) {
   return stmt`ALTER TABLE IF EXISTS ${dependency(
-    table.id,
-    `"${table.schema}"."${table.name}"`
+    table.fullName,
+    table.id
   )} ADD CONSTRAINT ${declaration(schema.id, constraint)} ${dependency(
-    schema.relid,
-    schema.definition
+    schema.definition,
+    schema.relid
   )};`;
 }
 /**
@@ -444,7 +454,7 @@ export function dropPolicy(schema: string, table: string, policy: string) {
 }
 export function createPolicy(schema: string, table: string, policy: Policy) {
   const s = stmt`CREATE POLICY ${policy.name} 
-  ON ${dependency(policy.relid, `"${schema}"."${table}"`)}
+  ON ${dependency(`"${schema}"."${table}"`, policy.relid)}
   AS ${policy.permissive ? 'PERMISSIVE' : 'RESTRICTIVE'}
   FOR ${policyForMap[policy.for]}
   TO ${policy.roles.join(',')}
@@ -532,20 +542,20 @@ export function generateChangeTableOwnerScript(table: string, owner: string) {
 }
 export function generateChangeTypeOwnerScript(type: Type, owner: string) {
   return stmt`ALTER TYPE ${dependency(
-    type.id,
-    type.fullName
+    type.fullName,
+    type.id
   )} OWNER TO ${owner};`;
 }
 export function generateChangeDomainOwnerScript(type: Domain, owner: string) {
   return stmt`ALTER DOMAIN ${dependency(
-    type.id,
-    type.fullName
+    type.fullName,
+    type.id
   )} OWNER TO ${owner};`;
 }
 export function generateChangeDomainCheckScript(type: Domain) {
   return stmt`ALTER DOMAIN DROP CONSTRAINT ${
     type.constraintName
-  };\nALTER DOMAIN ${dependency(type.id, type.fullName)} ADD CONSTRAINT ${
+  };\nALTER DOMAIN ${dependency(type.fullName, type.id)} ADD CONSTRAINT ${
     type.constraintName
   } ${type.check};`;
 }

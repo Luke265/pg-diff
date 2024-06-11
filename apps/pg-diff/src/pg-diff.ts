@@ -1,5 +1,5 @@
-import { CompareApi } from './api/compare-api';
-import { MigrationApi } from './api/migration-api';
+import { CompareApi } from './compare/compare-api';
+import { MigrationApi } from './migration-api';
 import { Config } from './models/config';
 import EventEmitter from 'events';
 

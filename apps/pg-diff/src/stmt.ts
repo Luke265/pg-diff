@@ -80,8 +80,17 @@ export function join(strings: readonly Sql[], separator: string) {
   );
 }
 
-export function dependency(id: number | string, value: string | Sql) {
-  return new SqlRef(value, [id]);
+export function dependency(value: string | Sql, ids: number | string): SqlRef;
+export function dependency(
+  value: string | Sql,
+  ids: (number | string)[]
+): SqlRef;
+export function dependency(
+  value: string | Sql,
+  ...ids: (number | string)[]
+): SqlRef;
+export function dependency(value: string | Sql, ...ids: any) {
+  return new SqlRef(value, ids.flat());
 }
 
 export function declaration(id: number, value: string | Sql) {

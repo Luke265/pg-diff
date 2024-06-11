@@ -1,9 +1,9 @@
-import objectType from '../../enums/object-type';
-import { Config } from '../../models/config';
-import { Type, Column, Domain } from '../../models/database-objects';
-import { Sql } from '../../stmt';
+import objectType from '../enums/object-type';
+import { Config } from '../models/config';
+import { Type, Column, Domain } from '../catalog/database-objects';
+import { Sql } from '../stmt';
 import { ColumnChanges, commentIsEqual } from './utils';
-import * as sql from '../../sql-script-generator';
+import * as sql from '../sql-script-generator';
 
 export function compareDomains(
   source: Record<string, Domain>,
@@ -14,12 +14,8 @@ export function compareDomains(
   for (const name in source) {
     const sourceObj = source[name];
     const targetObj = target[name];
-    let actionLabel = '';
-
     if (targetObj) {
       //Table exists on both database, then compare table schema
-      actionLabel = 'ALTER';
-
       if (sourceObj.check !== targetObj.check) {
         sqlScript.push(sql.generateChangeDomainCheckScript(sourceObj));
       }
@@ -40,7 +36,6 @@ export function compareDomains(
       }
     } else {
       //Table not exists on target database, then generate the script to create table
-      actionLabel = 'CREATE';
       sqlScript.push(sql.generateCreateDomainScript(sourceObj));
       if (sourceObj.comment) {
         sqlScript.push(

@@ -1,84 +1,28 @@
 import { ClientBase } from 'pg';
 import { core } from '../core';
 import { ServerVersion } from '../models/server-version';
-import { DataTypeCategory } from '../models/database-objects';
+import { DataTypeCategory } from './database-objects';
 
-export interface PrivilegeRow {
-  schemaname: string;
-  tablename: string;
-  usename: string;
-  select: boolean;
-  insert: boolean;
-  update: boolean;
-  delete: boolean;
-  truncate: boolean;
-  references: boolean;
-  trigger: boolean;
-}
-
-export interface ViewPrivilegeRow {
-  schemaname: string;
-  viewname: string;
-  usename: string;
-  select: boolean;
-  insert: boolean;
-  update: boolean;
-  delete: boolean;
-  truncate: boolean;
-  references: boolean;
-  trigger: boolean;
-}
-
-export interface FunctionPrivilegeRow {
-  pronamespace: string;
-  proname: string;
-  usename: string;
-  execute: boolean;
-}
-export interface SequencePrivilegeRow {
-  sequence_schema: string;
-  sequence_name: string;
-  usename: string;
-  select: boolean;
-  usage: boolean;
-  update: boolean;
-  cache_value: string | null;
-}
-
-export interface ViewDependencyRow {
-  schemaname: string;
-  tablename: string;
-  columnname: string;
-}
-export interface MaterializedViewPrivilegeRow {
-  schemaname: string;
-  matviewname: string;
-  usename: string;
-  select: boolean;
-  insert: boolean;
-  update: boolean;
-  delete: boolean;
-  truncate: boolean;
-  references: boolean;
-  trigger: boolean;
-}
-
-export function getAllSchemas(client: ClientBase) {
+export async function getAllSchemaNames(client: ClientBase) {
   //TODO: Instead of using ::regrole casting, for better performance join with pg_roles
-  return client.query<{ nspname: string }>(`SELECT nspname FROM pg_namespace 
+  const { rows } = await client.query<{
+    nspname: string;
+  }>(`SELECT nspname FROM pg_namespace 
       WHERE nspname NOT IN ('pg_catalog','information_schema')
       AND nspname NOT LIKE 'pg_toast%'
       AND nspname NOT LIKE 'pg_temp%'`);
+  return rows.map((row) => row.nspname);
 }
 
+export interface SchemaRow {
+  id: number;
+  nspname: string;
+  owner: string;
+  comment: string | null;
+}
 export function getSchemas(client: ClientBase, schemas: string[]) {
   //TODO: Instead of using ::regrole casting, for better performance join with pg_roles
-  return client.query<{
-    id: number;
-    nspname: string;
-    owner: string;
-    comment: string | null;
-  }>(`SELECT n.oid AS id, n.nspname, n.nspowner::regrole::name as owner, d.description as comment
+  return client.query<SchemaRow>(`SELECT n.oid AS id, n.nspname, n.nspowner::regrole::name as owner, d.description as comment
       FROM pg_namespace n
       LEFT JOIN pg_description d ON d.objoid = n."oid" AND d.objsubid = 0
       WHERE nspname IN ('${schemas.join("','")}')`);
@@ -286,6 +230,18 @@ export function getTableIndexes(
                   LEFT JOIN pg_description d ON d.objoid = idx."oid" AND d.objsubid = 0
                   WHERE tbln.nspname = '${schemaName}' AND tbl.relname='${tableName}' AND i.indisprimary = false AND i.indisunique = FALSE`);
 }
+export interface PrivilegeRow {
+  schemaname: string;
+  tablename: string;
+  usename: string;
+  select: boolean;
+  insert: boolean;
+  update: boolean;
+  delete: boolean;
+  truncate: boolean;
+  references: boolean;
+  trigger: boolean;
+}
 export function getTablePrivileges(
   client: ClientBase,
   schemaName: string,
@@ -323,6 +279,18 @@ export function getViews(client: ClientBase, schemas: string[]) {
                       WHERE d.deptype = 'e'
                   )`);
 }
+export interface ViewPrivilegeRow {
+  schemaname: string;
+  viewname: string;
+  usename: string;
+  select: boolean;
+  insert: boolean;
+  update: boolean;
+  delete: boolean;
+  truncate: boolean;
+  references: boolean;
+  trigger: boolean;
+}
 export function getViewPrivileges(
   client: ClientBase,
   schemaName: string,
@@ -355,6 +323,18 @@ export function getMaterializedViews(client: ClientBase, schemas: string[]) {
                   LEFT JOIN pg_description d ON d.objoid = c."oid" AND d.objsubid = 0
                   WHERE schemaname IN ('${schemas.join("','")}')`);
 }
+export interface MaterializedViewPrivilegeRow {
+  schemaname: string;
+  matviewname: string;
+  usename: string;
+  select: boolean;
+  insert: boolean;
+  update: boolean;
+  delete: boolean;
+  truncate: boolean;
+  references: boolean;
+  trigger: boolean;
+}
 export function getMaterializedViewPrivileges(
   client: ClientBase,
   schemaName: string,
@@ -370,6 +350,11 @@ export function getMaterializedViewPrivileges(
                   HAS_TABLE_PRIVILEGE(u.usename,'"${schemaName}"."${viewName}"', 'TRIGGER') as trigger
                   FROM pg_matviews v, pg_user u 
                   WHERE v.schemaname = '${schemaName}' and v.matviewname='${viewName}'`);
+}
+export interface ViewDependencyRow {
+  schemaname: string;
+  tablename: string;
+  columnname: string;
 }
 export function getViewDependencies(
   client: ClientBase,
@@ -586,6 +571,13 @@ export function getTablePolicies(
                   LEFT JOIN pg_description d ON d.objoid = p."oid" AND d.objsubid = 0
                   WHERE n.nspname = '${schema}' AND t.relname = '${table}'`);
 }
+
+export interface FunctionPrivilegeRow {
+  pronamespace: string;
+  proname: string;
+  usename: string;
+  execute: boolean;
+}
 export function getFunctionPrivileges(
   client: ClientBase,
   schemaName: string,
@@ -646,6 +638,17 @@ export function getSequences(
                       }
                   ) s, LATERAL pg_sequence_parameters(s.oid) p`);
 }
+
+export interface SequencePrivilegeRow {
+  sequence_schema: string;
+  sequence_name: string;
+  usename: string;
+  select: boolean;
+  usage: boolean;
+  update: boolean;
+  cache_value: string | null;
+}
+
 export function getSequencePrivileges(
   client: ClientBase,
   schemaName: string,
