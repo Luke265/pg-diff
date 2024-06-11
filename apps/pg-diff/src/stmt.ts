@@ -87,7 +87,7 @@ export function dependency(
 ): SqlRef;
 export function dependency(
   value: string | Sql,
-  ...ids: (number | string)[]
+  ...ids: (number | string | (number | string)[])[]
 ): SqlRef;
 export function dependency(value: string | Sql, ...ids: any) {
   return new SqlRef(value, ids.flat());

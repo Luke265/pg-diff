@@ -623,7 +623,7 @@ export function compareTablePrivileges(
 
       if (Object.keys(changes).length > 0)
         lines.push(
-          sql.generateChangesTableRoleGrantsScript(tableName, role, changes)
+          ...sql.generateChangesTableRoleGrantsScript(tableName, role, changes)
         );
     } else {
       //Table grants for role not exists on target database, then generate script to add role privileges

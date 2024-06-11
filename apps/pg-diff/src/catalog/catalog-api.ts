@@ -109,7 +109,6 @@ export async function typeColumns(
       dataTypeCategory: row.typcategory,
       default: defaultValue,
       defaultRefs: defaultFunctionIds,
-      functionReferences: [],
       precision: row.precision,
       scale: row.scale,
       identity: columnIdentity,
@@ -426,16 +425,16 @@ export async function retrieveMaterializedViews(
 export async function retrieveFunctions(client: ClientBase, config: Config) {
   const result: Record<string, Record<string, FunctionDefinition>> = {};
   const list: FunctionDefinition[] = [];
-  const procedures = await getFunctions(
+  const { rows } = await getFunctions(
     client,
     config.schemas,
     await getServerVersion(client)
   );
 
   await Promise.all(
-    procedures.rows.map(async (row) => {
-      const fullProcedureName = `"${row.nspname}"."${row.proname}"`;
-      const map = (result[fullProcedureName] ??= {});
+    rows.map(async (row) => {
+      const fullName = `"${row.nspname}"."${row.proname}"`;
+      const map = (result[fullName] ??= {});
       const def = (map[row.argtypes] = {
         id: row.id,
         definition: row.definition,
@@ -443,7 +442,7 @@ export async function retrieveFunctions(client: ClientBase, config: Config) {
         returnTypeId: row.returnTypeId,
         argtypeids: row.argtypeids,
         languageName: row.languageName,
-        fullName: fullProcedureName,
+        fullName,
         argTypes: row.argtypes,
         privileges: {},
         comment: row.comment,

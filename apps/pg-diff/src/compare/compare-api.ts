@@ -665,14 +665,13 @@ export function compareProcedurePrivileges(
     //Get new or changed role privileges
     if (targetObj) {
       //Procedure privileges for role exists on both database, then compare privileges
-      let changes: ColumnChanges = {};
-      if (sourceObj.execute != targetObj.execute)
+      let changes = { execute: null };
+      if (sourceObj.execute !== targetObj.execute) {
         changes.execute = sourceObj.execute;
-
-      if (Object.keys(changes).length > 0)
         lines.push(
           sql.generateChangesProcedureRoleGrantsScript(schema, role, changes)
         );
+      }
     } else {
       //Procedure grants for role not exists on target database, then generate script to add role privileges
       lines.push(sql.generateProcedureRoleGrantsScript(schema, role));

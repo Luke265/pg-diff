@@ -1,4 +1,4 @@
-import { ColumnChanges } from './compare/utils';
+import { ColumnChanges, PrivilegeChanges } from './compare/utils';
 import objectType from './enums/object-type';
 import {
   AggregateDefinition,
@@ -7,6 +7,7 @@ import {
   Domain,
   FunctionDefinition,
   IndexDefinition,
+  MaterializedViewDefinition,
   Policy,
   Privileges,
   Sequence,
@@ -17,6 +18,19 @@ import {
   ViewDefinition,
 } from './catalog/database-objects';
 import { Sql, declaration, dependency, join, stmt } from './stmt';
+
+const PROCEDURE_TYPE = {
+  p: 'PROCEDURE',
+  f: 'FUNCTION',
+} as const;
+
+const POLICY_FOR = {
+  '*': 'ALL',
+  w: 'UPDATE',
+  r: 'SELECT',
+  a: 'INSERT',
+  d: 'DELETE',
+} as const;
 
 const hints = {
   addColumnNotNullableWithoutDefaultValue:
@@ -29,7 +43,8 @@ const hints = {
   identityColumnDetected:
     ' --WARN: Identity column has been detected, an error can occure because constraints violation!',
   dropTable: ' --WARN: Drop table can occure in data loss!',
-};
+} as const;
+
 export type SequenceProperties =
   | 'startValue'
   | 'minValue'
@@ -38,13 +53,6 @@ export type SequenceProperties =
   | 'cacheSize'
   | 'isCycle'
   | 'owner';
-const policyForMap = {
-  '*': 'ALL',
-  w: 'UPDATE',
-  r: 'SELECT',
-  a: 'INSERT',
-  d: 'DELETE',
-} as const;
 
 export function generateColumnDataTypeDefinition(schema: ColumnChanges) {
   if (schema.precision) {
@@ -55,6 +63,7 @@ export function generateColumnDataTypeDefinition(schema: ColumnChanges) {
   }
   return stmt`${dependency(schema.datatype, schema.dataTypeID)}`;
 }
+
 export function generateColumnDefinition(schema: Column) {
   let nullableExpression = schema.nullable ? 'NULL' : 'NOT NULL';
 
@@ -87,50 +96,39 @@ export function generateTableGrantsDefinition(
   privileges: Privileges
 ): Sql | null {
   const list = [
-    privileges.select ? 'SELECT' : null,
-    privileges.insert ? 'INSERT' : null,
-    privileges.update ? 'UPDATE' : null,
-    privileges.delete ? 'DELETE' : null,
-    privileges.truncate ? 'TRUNCATE' : null,
-    privileges.references ? 'REFERENCES' : null,
-    privileges.trigger ? 'TRIGGER' : null,
+    ['SELECT', privileges.select],
+    ['INSERT', privileges.insert],
+    ['UPDATE', privileges.update],
+    ['DELETE', privileges.delete],
+    ['TRUNCATE', privileges.truncate],
+    ['REFERENCES', privileges.references],
+    ['TRIGGER', privileges.trigger],
   ];
-  const filtered = list.filter((v) => !!v);
+  const filtered = list.filter((v) => v[1] !== undefined);
   if (filtered.length === 0) {
     return null;
   }
-  const str = list.length === filtered.length ? 'ALL' : filtered.join(', ');
+  const str =
+    list.length === filtered.length
+      ? 'ALL'
+      : filtered.map(([op]) => op).join(', ');
   return stmt`GRANT ${str} ON TABLE ${table} TO ${role};${hints.potentialRoleMissing}`;
 }
-/**
- *
- * @param {String} procedure
- * @param {String} argTypes
- * @param {String} role
- * @param {Object} privileges
- * @param {"f"|"p"} type
- */
+
 export function generateProcedureGrantsDefinition(
   schema: FunctionDefinition,
   role: string
 ) {
-  const procedureType = schema.type === 'f' ? 'FUNCTION' : 'PROCEDURE';
-
-  let definitions: string[] = [];
-
-  if (schema.privileges.execute)
-    definitions.push(
-      `GRANT EXECUTE ON ${procedureType} ${schema.fullName}(${schema.argTypes}) TO ${role};${hints.potentialRoleMissing}`
-    );
-
-  return definitions;
+  if (schema.privileges.execute) {
+    return [
+      `GRANT EXECUTE ON ${PROCEDURE_TYPE[schema.type]} ${schema.fullName}(${
+        schema.argTypes
+      }) TO ${role};${hints.potentialRoleMissing}`,
+    ];
+  }
+  return [];
 }
-/**
- *
- * @param {String} sequence
- * @param {String} role
- * @param {Object} privileges
- */
+
 export function generateSequenceGrantsDefinition(
   sequence: string,
   role: string,
@@ -154,13 +152,7 @@ export function generateSequenceGrantsDefinition(
   }
   return definitions;
 }
-/**
- *
- * @param {String} objectType
- * @param {String} objectName
- * @param {String} comment
- * @param {String} parentObjectName
- */
+
 export function generateChangeCommentScript(
   id: number | string,
   objectType: string,
@@ -175,23 +167,23 @@ export function generateChangeCommentScript(
     id
   )} ${objectName} ${parentObject} IS ${description};`;
 }
-/**
- *
- * @param {String} schema
- * @param {String} owner
- */
+
 export function generateCreateSchemaScript(schema: string, owner: string) {
   return stmt`CREATE SCHEMA IF NOT EXISTS ${schema} AUTHORIZATION ${owner};`;
 }
+
 export function generateDropTableScript(table: string) {
   return stmt`DROP TABLE IF EXISTS ${table};`;
 }
+
 export function generateDropTypeScript(type: Type) {
   return stmt`DROP TYPE ${type.fullName};`;
 }
+
 export function generateDropDomainScript(type: Domain) {
   return stmt`DROP DOMAIN ${type.fullName};`;
 }
+
 export function generateCreateTypeScript(schema: Type) {
   const columnArr = Object.values(schema.columns);
   const columns = columnArr.map((obj) => generateTypeColumnDefinition(obj));
@@ -214,12 +206,14 @@ export function generateCreateTypeScript(schema: Type) {
   return stmt`CREATE TYPE ${declaration(schema.id, schema.fullName)} AS ${body};
   ${join(columnsComment, '\n')}`;
 }
+
 export function generateCreateDomainScript(schema: Domain) {
   return stmt`CREATE DOMAIN ${declaration(
     schema.id,
     schema.fullName
   )} AS ${dependency(schema.type.fullName, schema.type.id)} ${schema.check};`;
 }
+
 export function generateTypeColumnDefinition(schema: Column) {
   let defaultValue: Sql;
   if (schema.default) {
@@ -266,8 +260,7 @@ export function generateCreateTableScript(table: string, schema: TableObject) {
 
   const privileges = Object.entries(schema.privileges)
     .map(([role, obj]) => generateTableGrantsDefinition(table, role, obj))
-    .filter((v) => !!v)
-    .flat();
+    .filter((v) => !!v);
 
   const columnsComment: Sql[] = columnArr
     .filter((obj) => !!obj.comment)
@@ -313,12 +306,14 @@ ${join(columnsComment, '\n')}
 ${join(constraintsComment, '\n')}
 ${join(indexesComment, '\n')}`;
 }
+
 export function generateAddTypeColumnScript(schema: Type, column: Column) {
   return stmt`ALTER TYPE ${dependency(
     schema.fullName,
     schema.id
   )} ADD ATTRIBUTE ${generateTypeColumnDefinition(column)};`;
 }
+
 export function generateAddTableColumnScript(table: string, column: Column) {
   const script = stmt`ALTER TABLE IF EXISTS ${table} ADD COLUMN IF NOT EXISTS ${generateColumnDefinition(
     column
@@ -328,12 +323,7 @@ export function generateAddTableColumnScript(table: string, column: Column) {
   }
   return script;
 }
-/**
- *
- * @param {String} table
- * @param {String} column
- * @param {Object} changes
- */
+
 export function generateChangeTableColumnScript(
   table: string,
   column: string,
@@ -385,12 +375,14 @@ export function generateChangeTableColumnScript(
   //TODO: Should we include COLLATE when change column data type?
   return stmt`ALTER TABLE IF EXISTS ${table}\n\t${join(definitions, ',\n\t')};`;
 }
+
 export function generateDropTypeColumnScript(table: Type, column: Column) {
   return stmt`ALTER TABLE IF EXISTS ${dependency(
     table.fullName,
     table.id
   )} DROP COLUMN IF EXISTS ${column.name} CASCADE;`;
 }
+
 export function generateDropTableColumnScript(
   table: string,
   column: string,
@@ -400,6 +392,7 @@ export function generateDropTableColumnScript(
     withoutHint ? '' : hints.dropColumn
   }`;
 }
+
 export function generateAddTableConstraintScript(
   table: TableObject,
   constraint: string,
@@ -413,22 +406,14 @@ export function generateAddTableConstraintScript(
     schema.relid
   )};`;
 }
-/**
- *
- * @param {String} table
- * @param {String} constraint
- */
+
 export function generateDropTableConstraintScript(
   table: TableObject,
   constraint: ConstraintDefinition
 ) {
   return stmt`ALTER TABLE IF EXISTS ${table.fullName} DROP CONSTRAINT IF EXISTS "${constraint.name}";`;
 }
-/**
- *
- * @param {String} table
- * @param {Object} options
- */
+
 export function generateChangeTableOptionsScript(
   table: string,
   options: TableOptions
@@ -440,30 +425,29 @@ export function generateChangeTableOptionsScript(
 export function generateChangeIndexScript(index: string, definition: string) {
   return stmt`DROP INDEX IF EXISTS ${index};\n${definition};`;
 }
-/**
- *
- * @param {String} index
- */
+
 export function generateDropIndexScript(index: IndexDefinition) {
   return stmt`DROP INDEX IF EXISTS "${index.schema}"."${index.name}";`;
 }
+
 export function dropPolicy(schema: string, table: string, policy: string) {
   const s = stmt`DROP POLICY ${policy} ON "${schema}"."${table}";`;
   s.weight = -1;
   return s;
 }
+
 export function createPolicy(schema: string, table: string, policy: Policy) {
   const s = stmt`CREATE POLICY ${policy.name} 
-  ON ${dependency(`"${schema}"."${table}"`, policy.relid)}
+  ON ${dependency(`"${schema}"."${table}"`, policy.relid, policy.dependencies)}
   AS ${policy.permissive ? 'PERMISSIVE' : 'RESTRICTIVE'}
-  FOR ${policyForMap[policy.for]}
+  FOR ${POLICY_FOR[policy.for]}
   TO ${policy.roles.join(',')}
   ${policy.using ? `USING ${policy.using}` : ''}
   ${policy.withCheck ? `WITH CHECK ${policy.withCheck}` : ''};`;
-  s.dependencies.push(...policy.dependencies);
   s.weight = 1;
   return s;
 }
+
 export function generateTableRoleGrantsScript(
   table: string,
   role: string,
@@ -471,87 +455,50 @@ export function generateTableRoleGrantsScript(
 ) {
   return generateTableGrantsDefinition(table, role, privileges);
 }
-/**
- *
- * @param {String} table
- * @param {String} role
- * @param {Object} changes
- */
+
 export function generateChangesTableRoleGrantsScript(
   table: string,
   role: string,
-  changes: any
+  changes: PrivilegeChanges
 ) {
-  let privileges: string[] = [];
+  const list = [
+    ['SELECT', changes.select],
+    ['INSERT', changes.insert],
+    ['UPDATE', changes.update],
+    ['DELETE', changes.delete],
+    ['TRUNCATE', changes.truncate],
+    ['REFERENCES', changes.references],
+    ['TRIGGER', changes.trigger],
+  ];
 
-  if (Object.prototype.hasOwnProperty.call(changes, 'select'))
-    privileges.push(
-      `${changes.select ? 'GRANT' : 'REVOKE'} SELECT ON TABLE ${table} ${
-        changes.select ? 'TO' : 'FROM'
-      } ${role};${hints.potentialRoleMissing}`
+  return list
+    .filter((v) => v[1] !== undefined)
+    .map(
+      ([op, grant]) =>
+        stmt`${grant ? 'GRANT' : 'REVOKE'} ${op} ON TABLE ${table} ${
+          grant ? 'TO' : 'FROM'
+        } ${role};${hints.potentialRoleMissing}`
     );
-
-  if (Object.prototype.hasOwnProperty.call(changes, 'insert'))
-    privileges.push(
-      `${changes.insert ? 'GRANT' : 'REVOKE'} INSERT ON TABLE ${table} ${
-        changes.insert ? 'TO' : 'FROM'
-      } ${role};${hints.potentialRoleMissing}`
-    );
-
-  if (Object.prototype.hasOwnProperty.call(changes, 'update'))
-    privileges.push(
-      `${changes.update ? 'GRANT' : 'REVOKE'} UPDATE ON TABLE ${table} ${
-        changes.update ? 'TO' : 'FROM'
-      } ${role};${hints.potentialRoleMissing}`
-    );
-
-  if (Object.prototype.hasOwnProperty.call(changes, 'delete'))
-    privileges.push(
-      `${changes.delete ? 'GRANT' : 'REVOKE'} DELETE ON TABLE ${table} ${
-        changes.delete ? 'TO' : 'FROM'
-      } ${role};${hints.potentialRoleMissing}`
-    );
-
-  if (Object.prototype.hasOwnProperty.call(changes, 'truncate'))
-    privileges.push(
-      `${changes.truncate ? 'GRANT' : 'REVOKE'} TRUNCATE ON TABLE ${table} ${
-        changes.truncate ? 'TO' : 'FROM'
-      } ${role};${hints.potentialRoleMissing}`
-    );
-
-  if (Object.prototype.hasOwnProperty.call(changes, 'references'))
-    privileges.push(
-      `${
-        changes.references ? 'GRANT' : 'REVOKE'
-      } REFERENCES ON TABLE ${table} ${
-        changes.references ? 'TO' : 'FROM'
-      } ${role};${hints.potentialRoleMissing}`
-    );
-
-  if (Object.prototype.hasOwnProperty.call(changes, 'trigger'))
-    privileges.push(
-      `${changes.trigger ? 'GRANT' : 'REVOKE'} TRIGGER ON TABLE ${table} ${
-        changes.trigger ? 'TO' : 'FROM'
-      } ${role};${hints.potentialRoleMissing}`
-    );
-
-  return stmt`${privileges.join('\n')}`;
 }
+
 export function generateChangeTableOwnerScript(table: string, owner: string) {
   return stmt`ALTER TABLE IF EXISTS ${table} OWNER TO ${owner};`;
 }
+
 export function generateChangeTypeOwnerScript(type: Type, owner: string) {
   return stmt`ALTER TYPE ${dependency(
     type.fullName,
     type.id
   )} OWNER TO ${owner};`;
 }
+
 export function generateChangeDomainOwnerScript(type: Domain, owner: string) {
   return stmt`ALTER DOMAIN ${dependency(
     type.fullName,
     type.id
   )} OWNER TO ${owner};`;
 }
+
 export function generateChangeDomainCheckScript(type: Domain) {
   return stmt`ALTER DOMAIN DROP CONSTRAINT ${
     type.constraintName
@@ -559,11 +506,7 @@ export function generateChangeDomainCheckScript(type: Domain) {
     type.constraintName
   } ${type.check};`;
 }
-/**
- *
- * @param {String} view
- * @param {Object} schema
- */
+
 export function generateCreateViewScript(view: string, schema: ViewDefinition) {
   const privileges = Object.entries(schema.privileges)
     .map(([role, obj]) => generateTableGrantsDefinition(view, role, obj))
@@ -572,21 +515,14 @@ export function generateCreateViewScript(view: string, schema: ViewDefinition) {
 ALTER VIEW IF EXISTS ${view} OWNER TO ${schema.owner};
 ${join(privileges, '\n')}`;
 }
-/**
- *
- * @param {String} view
- */
+
 export function generateDropViewScript(view: string) {
   return stmt`DROP VIEW IF EXISTS ${view};`;
 }
-/**
- *
- * @param {String} view
- * @param {Object} schema
- */
+
 export function generateCreateMaterializedViewScript(
   view: string,
-  schema: any
+  schema: MaterializedViewDefinition
 ) {
   //Generate indexes script
   const indexes: string[] = [];
@@ -605,135 +541,88 @@ export function generateCreateMaterializedViewScript(
 ALTER MATERIALIZED VIEW IF EXISTS ${view} OWNER TO ${schema.owner};
 ${join(privileges, '\n')}`;
 }
-/**
- *
- * @param {String} view
- */
+
 export function generateDropMaterializedViewScript(view: string) {
   return stmt`DROP MATERIALIZED VIEW IF EXISTS ${view};`;
 }
-/**
- *
- * @param {String} procedure
- * @param {Object} schema
- * @param {"f"|"p"} type
- */
-export function generateCreateProcedureScript(schema: FunctionDefinition) {
-  const procedureType = schema.type === 'f' ? 'FUNCTION' : 'PROCEDURE';
 
-  //Generate privileges script
-  let privileges: string[] = [];
-  privileges.push();
-  for (let role in schema.privileges) {
-    privileges = privileges.concat(
-      generateProcedureGrantsDefinition(schema, role)
-    );
-  }
+export function generateCreateProcedureScript(schema: FunctionDefinition) {
+  const privileges = Object.entries(schema.privileges)
+    .map(([role]) => generateProcedureGrantsDefinition(schema, role))
+    .flat();
   const st = stmt`${declaration(schema.id, schema.definition)};
-ALTER ${procedureType} ${schema.fullName}(${schema.argTypes}) OWNER TO ${
-    schema.owner
-  };
+ALTER ${PROCEDURE_TYPE[schema.type]} ${schema.fullName}(${
+    schema.argTypes
+  }) OWNER TO ${schema.owner};
 ${privileges.join('\n')}`;
   st.dependencies.push(...schema.fReferenceIds);
   return st;
 }
-/**
- *
- * @param {String} aggregate
- * @param {Object} schema
- */
+
 export function generateCreateAggregateScript(schema: AggregateDefinition) {
-  //Generate privileges script
-  let privileges: string[] = [];
-  privileges.push(
-    `ALTER AGGREGATE ${schema.fullName}(${schema.argTypes}) OWNER TO ${schema.owner};`
-  );
-  for (let role in schema.privileges) {
-    privileges = privileges.concat(
-      generateProcedureGrantsDefinition(schema, role)
-    );
-  }
+  const privileges = Object.entries(schema.privileges)
+    .map(([role]) => generateProcedureGrantsDefinition(schema, role))
+    .flat();
 
   return stmt`CREATE AGGREGATE ${schema.fullName} (${schema.argTypes}) (\n${
     schema.definition
-  }\n);\n${privileges.join('\n')}`;
+  }\n);
+ALTER AGGREGATE ${schema.fullName}(${schema.argTypes}) OWNER TO ${schema.owner};
+${privileges.join('\n')}`;
 }
 
-/**
- *
- * @param {String} aggregate
- * @param {Object} schema
- */
 export function generateChangeAggregateScript(schema: AggregateDefinition) {
   return stmt`DROP AGGREGATE IF EXISTS ${schema.fullName}(${
     schema.argTypes
   });\n${generateCreateAggregateScript(schema)}`;
 }
-/**
- *
- * @param {String} procedure
- * @param {String} procedureArgs
- */
+
 export function generateDropProcedureScript(schema: FunctionDefinition) {
-  const procedureType = schema.type === 'f' ? 'FUNCTION' : 'PROCEDURE';
-  const s = stmt`DROP ${procedureType} IF EXISTS ${schema.fullName}(${schema.argTypes});`;
+  const s = stmt`DROP ${PROCEDURE_TYPE[schema.type]} IF EXISTS ${
+    schema.fullName
+  }(${schema.argTypes});`;
   s.weight = 1;
   return s;
 }
-/**
- *
- * @param {String} aggregate
- * @param {String} aggregateArgs
- */
+
 export function generateDropAggregateScript(
   aggregate: string,
   aggregateArgs: string
 ) {
   return stmt`DROP AGGREGATE IF EXISTS ${aggregate}(${aggregateArgs});`;
 }
-/**
- *
- * @param {String} procedure
- * @param {String} argTypes
- * @param {String} role
- * @param {Object} privileges
- * @param {"f"|"p"} type
- */
+
 export function generateProcedureRoleGrantsScript(
   schema: FunctionDefinition,
   role: string
 ) {
   return stmt`${generateProcedureGrantsDefinition(schema, role).join('\n')}`;
 }
+
 export function generateChangesProcedureRoleGrantsScript(
   schema: FunctionDefinition,
   role: string,
-  changes: any
+  changes: { execute: boolean | null }
 ) {
-  const procedureType = schema.type === 'f' ? 'FUNCTION' : 'PROCEDURE';
-  let privileges: string[] = [];
-
-  if (Object.prototype.hasOwnProperty.call(changes, 'execute'))
-    privileges.push(
-      `${changes.execute ? 'GRANT' : 'REVOKE'} EXECUTE ON ${procedureType} ${
-        schema.fullName
-      }(${schema.argTypes}) ${changes.execute ? 'TO' : 'FROM'} ${role};${
-        hints.potentialRoleMissing
-      }`
-    );
-
-  return stmt`${privileges.join('\n')}`;
+  if (changes.execute === null) {
+    return null;
+  }
+  return stmt`${changes.execute ? 'GRANT' : 'REVOKE'} EXECUTE ON ${
+    PROCEDURE_TYPE[schema.type]
+  } ${schema.fullName}(${schema.argTypes}) ${
+    changes.execute ? 'TO' : 'FROM'
+  } ${role};${hints.potentialRoleMissing}`;
 }
+
 export function generateChangeProcedureOwnerScript(
   procedure: string,
   argTypes: string,
   owner: string,
   type: 'p' | 'f'
 ) {
-  const procedureType = type === 'f' ? 'FUNCTION' : 'PROCEDURE';
-
-  return stmt`ALTER ${procedureType} ${procedure}(${argTypes}) OWNER TO ${owner};`;
+  return stmt`ALTER ${PROCEDURE_TYPE[type]} ${procedure}(${argTypes}) OWNER TO ${owner};`;
 }
+
 export function generateChangeAggregateOwnerScript(
   aggregate: string,
   argTypes: string,
@@ -741,6 +630,7 @@ export function generateChangeAggregateOwnerScript(
 ) {
   return stmt`ALTER AGGREGATE ${aggregate}(${argTypes}) OWNER TO ${owner};`;
 }
+
 export function generateUpdateTableRecordScript(
   table: string,
   fields: any,
@@ -769,6 +659,7 @@ export function generateUpdateTableRecordScript(
     ' AND '
   )};`;
 }
+
 export function generateInsertTableRecordScript(
   table: string,
   record: any,
@@ -789,6 +680,7 @@ export function generateInsertTableRecordScript(
     return stmt`\n${hints.identityColumnDetected} ${script}`;
   return script;
 }
+
 export function generateDeleteTableRecordScript(
   table: string,
   fields: any[],
@@ -807,6 +699,7 @@ export function generateDeleteTableRecordScript(
 
   return stmt`DELETE FROM ${table} WHERE ${conditions.join(' AND ')};`;
 }
+
 export function generateSqlFormattedValue(
   fieldName: string,
   fields: any,
@@ -867,6 +760,7 @@ export function generateSqlFormattedValue(
       );
   }
 }
+
 export function generateMergeTableRecord(
   table: string,
   fields: any,
@@ -901,16 +795,15 @@ export function generateMergeTableRecord(
   )})\nON CONFLICT ${conflictDefinition}\nDO UPDATE SET ${updates.join(', ')}`;
   return script;
 }
+
 export function generateSetSequenceValueScript(
   tableName: string,
   sequence: any
 ) {
   return stmt`SELECT setval(pg_get_serial_sequence('${tableName}', '${sequence.attname}'), max("${sequence.attname}"), true) FROM ${tableName};`;
 }
-export function sequencePropertyMap(
-  property: SequenceProperties,
-  value: string
-) {
+
+function sequencePropertyMap(property: SequenceProperties, value: string) {
   switch (property) {
     case 'startValue':
       return `START WITH ${value}`;
@@ -930,6 +823,7 @@ export function sequencePropertyMap(
       throw new Error(`Unsupported property ${property}`);
   }
 }
+
 export function generateChangeSequencePropertyScript(
   sequence: string,
   property: SequenceProperties,
@@ -940,6 +834,7 @@ export function generateChangeSequencePropertyScript(
     value
   )};`;
 }
+
 export function generateChangesSequenceRoleGrantsScript(
   sequence: string,
   role: string,
@@ -970,6 +865,7 @@ export function generateChangesSequenceRoleGrantsScript(
 
   return stmt`${privileges.join('\n')}`;
 }
+
 export function generateSequenceRoleGrantsScript(
   sequence: string,
   role: string,
@@ -981,6 +877,7 @@ export function generateSequenceRoleGrantsScript(
     privileges
   ).join('\n')}`;
 }
+
 export function generateCreateSequenceScript(
   sequence: Sequence,
   owner: string
@@ -1011,6 +908,7 @@ CREATE SEQUENCE IF NOT EXISTS ${fullName}
 \t${sequence.isCycle ? '' : 'NO '}CYCLE;
 \n${privileges.flat().join('\n')}`;
 }
+
 export function generateRenameSequenceScript(
   old_name: string,
   new_name: string

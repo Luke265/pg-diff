@@ -7,7 +7,7 @@ export function commentIsEqual(
   return a === b || (!a && !b);
 }
 
-export interface ColumnChanges {
+export interface ColumnChanges extends PrivilegeChanges {
   datatype?: string;
   dataTypeID?: number;
   dataTypeCategory?: any;
@@ -18,6 +18,9 @@ export interface ColumnChanges {
   defaultRefs?: (number | string)[];
   identity?: any;
   isNewIdentity?: any;
+}
+
+export interface PrivilegeChanges {
   truncate?: any;
   references?: any;
   trigger?: any;

@@ -21,7 +21,6 @@ export async function loadCatalog(client: ClientBase, config: Config) {
     views: {},
     materializedViews: {},
     functionMap: {},
-    functions: [],
     aggregates: {},
     sequences: {},
     types: {},
@@ -32,15 +31,19 @@ export async function loadCatalog(client: ClientBase, config: Config) {
   dbObjects.tables = await retrieveTables(client, config);
   dbObjects.views = await retrieveViews(client, config);
   dbObjects.materializedViews = await retrieveMaterializedViews(client, config);
+  dbObjects.aggregates = await retrieveAggregates(client, config);
+  dbObjects.sequences = await retrieveSequences(client, config);
+  dbObjects.types = await retrieveTypes(client, config);
+  dbObjects.domains = await retrieveDomains(client, config);
   const { map: functionMap, list: functionList } = await retrieveFunctions(
     client,
     config
   );
   dbObjects.functionMap = functionMap;
-  dbObjects.functions = functionList;
   const tableIdMap = Object.values(dbObjects.tables).map(
     (t) => [t.id, `${t.schema}.${t.name}`] as [number, string]
   );
+  // mark mentioned tables in a function definition as dependencies
   for (const fn of functionList) {
     if (fn.languageName !== 'sql') {
       continue;
@@ -59,6 +62,7 @@ export async function loadCatalog(client: ClientBase, config: Config) {
   }
   for (const name in dbObjects.tables) {
     const table = dbObjects.tables[name];
+    // mark mentioned tables in a policy definition as dependencies
     for (const policyName in table.policies) {
       const policy = table.policies[policyName];
       if (policy.using) {
@@ -76,17 +80,7 @@ export async function loadCatalog(client: ClientBase, config: Config) {
         }
       }
     }
-    for (const columnName in table.columns) {
-      const column = table.columns[columnName];
-      column.functionReferences = column.defaultRefs.map((id) =>
-        dbObjects.functions.find((f) => f.id === id)
-      );
-    }
   }
-  dbObjects.aggregates = await retrieveAggregates(client, config);
-  dbObjects.sequences = await retrieveSequences(client, config);
-  dbObjects.types = await retrieveTypes(client, config);
-  dbObjects.domains = await retrieveDomains(client, config);
 
   //TODO: Add a way to retrieve AGGREGATE and WINDOW functions
   //TODO: Do we need to retrieve roles?

@@ -29,7 +29,7 @@ export interface SequencePrivileges {
   update?: boolean;
 }
 export interface FunctionPrivileges {
-  execute: string;
+  execute: boolean;
 }
 export interface ConstraintDefinition {
   id: number;
@@ -109,7 +109,6 @@ export interface Column {
   dataTypeCategory: DataTypeCategory;
   default: string | null;
   defaultRefs: number[];
-  functionReferences: FunctionDefinition[];
   precision: number | null;
   scale: number | null;
   identity: string | null;
@@ -208,7 +207,6 @@ export interface DatabaseObjects {
   views: Record<string, ViewDefinition>;
   materializedViews: Record<string, MaterializedViewDefinition>;
   functionMap: Record<string, Record<string, FunctionDefinition>>;
-  functions: FunctionDefinition[];
   aggregates: Record<string, Record<string, AggregateDefinition>>;
   sequences: Record<string, Sequence>;
   types: Record<string, Type>;
