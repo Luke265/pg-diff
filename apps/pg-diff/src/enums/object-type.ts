@@ -1,6 +1,8 @@
 export default {
   SCHEMA: 'SCHEMA',
   TABLE: 'TABLE',
+  TYPE: 'TYPE',
+  DOMAIN: 'DOMAIN',
   COLUMN: 'COLUMN',
   CONSTRAINT: 'CONSTRAINT',
   INDEX: 'INDEX',

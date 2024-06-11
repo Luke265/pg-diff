@@ -103,6 +103,70 @@ export function getTables(client: ClientBase, schemas: string[]) {
                   WHERE d.deptype = 'e'
               )`);
 }
+export interface TypeRow {
+  id: number;
+  schema: string;
+  type: 'c' | 'e';
+  name: string;
+  owner: string;
+  comment: string | null;
+  values: string[];
+}
+export function getTypes(client: ClientBase, schemas: string[]) {
+  return client.query<TypeRow>(`SELECT
+  t.oid AS id,
+  t.typtype AS type,
+  n.nspname AS schema,
+  t.typname AS name,
+  d.description AS comment,
+  r.rolname AS owner,
+  ARRAY((SELECT enumlabel FROM pg_enum WHERE enumtypid = t.oid))::TEXT[] AS values
+FROM
+  pg_type t
+  LEFT JOIN pg_class c ON t.oid = c.reltype
+  JOIN pg_namespace n ON n.oid = t.typnamespace
+  LEFT JOIN pg_description d ON d.objoid = t."oid" AND d.objsubid = 0
+  JOIN pg_roles r ON r.oid = t.typowner
+WHERE
+(t.typtype = 'e' OR c.relkind = 'c') AND n.nspname IN ('${schemas.join(
+    "','"
+  )}')`);
+}
+export interface DomainRow {
+  id: number;
+  schema: string;
+  name: string;
+  owner: string;
+  comment: string | null;
+  typbasetype: number;
+  typeschema: string;
+  typename: string;
+  check: string;
+  constraintName: string;
+}
+export function getDomains(client: ClientBase, schemas: string[]) {
+  return client.query<DomainRow>(`SELECT
+  t.oid                       AS id,
+  n.nspname                   AS schema,
+  t.typname                   AS name,
+  d.description               AS comment,
+  r.rolname                   AS owner,
+  tt.typname                  AS typename,
+  tn.nspname                  AS typeschema,
+  t.typbasetype               AS typbasetype,
+  PG_GET_CONSTRAINTDEF(c.oid) AS check,
+  c.conname                   AS "constraintName"
+FROM
+  pg_type t
+  JOIN pg_type tt ON tt.oid = t.typbasetype
+  JOIN pg_namespace tn ON tn.oid = tt.typnamespace
+  JOIN pg_namespace n ON n.oid = t.typnamespace
+  JOIN pg_constraint c ON c.contypid = t.oid
+  LEFT JOIN pg_description d ON d.objoid = t.oid AND d.objsubid = 0
+  INNER JOIN pg_roles r ON r.oid = t.typowner
+WHERE
+  t.typtype = 'd' AND n.nspname IN ('${schemas.join("','")}')`);
+}
 export function getTableOptions(
   client: ClientBase,
   schemaName: string,
@@ -118,6 +182,7 @@ export interface TableColumnRow {
   attname: string;
   attnotnull: boolean;
   typname: string;
+  nspname: string;
   typeid: number;
   typcategory: DataTypeCategory;
   adsrc: string | null;
@@ -139,7 +204,8 @@ export function getTableColumns(
         CONCAT(attrelid, '-', attname) AS id,
         a.attname, 
         a.attnotnull, 
-        t.typname, 
+        t.typname,
+        tn.nspname,
         t.oid as typeid, 
         t.typcategory, 
         pg_get_expr(ad.adbin ,ad.adrelid ) as adsrc, 
@@ -167,6 +233,7 @@ export function getTableColumns(
                   FROM pg_attribute a
                   INNER JOIN pg_type t ON t.oid = a.atttypid
                   LEFT JOIN pg_attrdef ad on ad.adrelid = a.attrelid AND a.attnum = ad.adnum
+                  INNER JOIN pg_namespace tn ON tn.oid = t.typnamespace
                   INNER JOIN pg_namespace n ON n.nspname = '${schemaName}'
                   INNER JOIN pg_class c ON c.relname = '${tableName}' AND c.relnamespace = n."oid"
                   LEFT JOIN pg_description d ON d.objoid = c."oid" AND d.objsubid = a.attnum
@@ -324,7 +391,12 @@ export function getViewDependencies(
 }
 export interface FunctionRow {
   id: number;
-  prorettype: number;
+  returnTypeId: number;
+  /**
+   * Array types are unwrapped to element type
+   */
+  argtypeids: number[];
+  languageName: string;
   proname: string;
   nspname: string;
   definition: string;
@@ -340,16 +412,20 @@ export function getFunctions(
 ) {
   //TODO: Instead of using ::regrole casting, for better performance join with pg_roles
   return client.query<FunctionRow>(`SELECT p.oid AS id, 
-  p.prorettype,
+  t.typrelid AS "returnTypeId",
+  l.lanname AS "languageName",
   p.proname, 
   n.nspname,
   pg_get_functiondef(p.oid) as definition,
   p.proowner::regrole::name as owner, 
-  oidvectortypes(proargtypes) as argtypes, 
+  oidvectortypes(proargtypes) as argtypes,
+  ARRAY((SELECT (CASE typelem WHEN 0 THEN oid ELSE typelem END) FROM pg_type WHERE oid = ANY(proargtypes)))::INTEGER[] AS argtypeids,
   d.description AS comment,
   p.prokind
                   FROM pg_proc p
                   INNER JOIN pg_namespace n ON n.oid = p.pronamespace
+                  INNER JOIN pg_language l ON l.oid = p.prolang
+                  LEFT JOIN pg_type t ON t.oid = p.prorettype
                   LEFT JOIN pg_description d ON d.objoid = p."oid" AND d.objsubid = 0
                   WHERE n.nspname IN ('${schemas.join(
                     "','"
@@ -365,59 +441,15 @@ export function getFunctions(
                       WHERE d.deptype = 'e'
                   )`);
 }
-export interface PolicyRow {
-  id: number;
-  polname: string;
-  polrelid: number;
-  polroles: number[];
-  polpermissive: boolean;
-  policy_qual: string | null;
-  policy_with_check: string | null;
-  comment: string | null;
-  schema: string;
-  role_names: string[];
-  polcmd: '*' | 'w' | 'r' | 'a' | 'd';
-  table: string;
-}
-export function getTablePolicies(
-  client: ClientBase,
-  schema: string,
-  table: string
-) {
-  //TODO: Instead of using ::regrole casting, for better performance join with pg_roles
-  return client.query<PolicyRow>(`SELECT
-  p.oid AS id,
-  p.polname, 
-  p.polrelid,
-  p.polroles, 
-  ARRAY(
-    SELECT r.rolname
-    FROM
-        pg_roles r
-    WHERE
-        r.oid = ANY (p.polroles)
-    )::TEXT[] AS role_names,
-  p.polcmd,
-  p.polpermissive,
-  d.description AS comment, 
-  pg_get_expr(polqual, polrelid) AS policy_qual,
-  pg_get_expr(polwithcheck, polrelid) AS policy_with_check,
-  n.nspname AS schema,
-  t.relname AS table
-                  FROM pg_policy p
-                  INNER JOIN pg_class t ON t.oid = p.polrelid
-                  INNER JOIN pg_class c ON c."oid" = p.polrelid
-                  INNER JOIN pg_namespace n ON n.oid = c.relnamespace 
-                  LEFT JOIN pg_description d ON d.objoid = p."oid" AND d.objsubid = 0
-                  WHERE n.nspname = '${schema}' AND t.relname = '${table}'`);
-}
 export interface AggregateRow {
   id: number;
   proname: string;
   nspname: string;
   owner: string;
   argtypes: string;
-  prorettype: number;
+  languageName: string;
+  returnTypeId: number;
+  argtypeids: number[];
   definition: string;
   comment: string | null;
 }
@@ -427,7 +459,14 @@ export function getAggregates(
   serverVersion: ServerVersion
 ) {
   //TODO: Instead of using ::regrole casting, for better performance join with pg_roles
-  return client.query<AggregateRow>(`SELECT p.oid AS id, p.prorettype, p.proname, n.nspname, p.proowner::regrole::name as owner, oidvectortypes(p.proargtypes) as argtypes,
+  return client.query<AggregateRow>(`SELECT 
+  p.oid AS id, 
+  t.typrelid AS "returnTypeId", 
+  l.lanname AS "languageName",
+  p.proname, n.nspname, 
+  p.proowner::regrole::name as owner, 
+  oidvectortypes(p.proargtypes) as argtypes,
+  ARRAY((SELECT (CASE typelem WHEN 0 THEN oid ELSE typelem END) FROM pg_type WHERE oid = ANY(proargtypes)))::INTEGER[] AS argtypeids,
                   format('%s', array_to_string(
                       ARRAY[
                           format(E'\\tSFUNC = %s', a.aggtransfn::text)
@@ -482,6 +521,8 @@ export function getAggregates(
                   ) as definition,
                   d.description AS comment
                   FROM pg_proc p
+                  INNER JOIN pg_language l ON l.oid = p.prolang
+                  LEFT JOIN pg_type t ON t.oid = p.prorettype
                   INNER JOIN pg_namespace n ON n.oid = p.pronamespace
                   INNER JOIN pg_aggregate a on p.oid = a.aggfnoid 
                   LEFT JOIN pg_operator o ON o.oid = a.aggsortop
@@ -498,6 +539,52 @@ export function getAggregates(
                       FROM pg_depend d
                       WHERE d.deptype = 'e'
                   )`);
+}
+export interface PolicyRow {
+  id: number;
+  polname: string;
+  polrelid: number;
+  polroles: number[];
+  polpermissive: boolean;
+  policy_qual: string | null;
+  policy_with_check: string | null;
+  comment: string | null;
+  schema: string;
+  role_names: string[];
+  polcmd: '*' | 'w' | 'r' | 'a' | 'd';
+  table: string;
+}
+export function getTablePolicies(
+  client: ClientBase,
+  schema: string,
+  table: string
+) {
+  //TODO: Instead of using ::regrole casting, for better performance join with pg_roles
+  return client.query<PolicyRow>(`SELECT
+  p.oid AS id,
+  p.polname, 
+  p.polrelid,
+  p.polroles, 
+  ARRAY(
+    SELECT r.rolname
+    FROM
+        pg_roles r
+    WHERE
+        r.oid = ANY (p.polroles)
+    )::TEXT[] AS role_names,
+  p.polcmd,
+  p.polpermissive,
+  d.description AS comment, 
+  pg_get_expr(polqual, polrelid) AS policy_qual,
+  pg_get_expr(polwithcheck, polrelid) AS policy_with_check,
+  n.nspname AS schema,
+  t.relname AS table
+                  FROM pg_policy p
+                  INNER JOIN pg_class t ON t.oid = p.polrelid
+                  INNER JOIN pg_class c ON c."oid" = p.polrelid
+                  INNER JOIN pg_namespace n ON n.oid = c.relnamespace 
+                  LEFT JOIN pg_description d ON d.objoid = p."oid" AND d.objsubid = 0
+                  WHERE n.nspname = '${schema}' AND t.relname = '${table}'`);
 }
 export function getFunctionPrivileges(
   client: ClientBase,

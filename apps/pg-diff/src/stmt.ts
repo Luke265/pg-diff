@@ -1,10 +1,9 @@
 export type RawValue = string | Sql | SqlRef | Declaration;
 export class Sql {
-  readonly values: RawValue[];
-  readonly strings: string[];
   readonly dependencies: (number | string)[] = [];
   readonly declarations: number[] = [];
   readonly content: string;
+  weight = 0;
 
   constructor(rawStrings: readonly string[], rawValues: readonly RawValue[]) {
     if (rawStrings.length - 1 !== rawValues.length) {
@@ -18,30 +17,17 @@ export class Sql {
         } values`
       );
     }
-
-    const valuesLength = rawValues.reduce<number>(
-      (len, value) => len + (value instanceof Sql ? value.values.length : 1),
-      0
-    );
-
-    this.values = new Array(valuesLength);
-    this.strings = new Array(valuesLength + 1);
-
-    this.strings[0] = rawStrings[0];
-
-    // Iterate over raw values, strings, and children. The value is always
-    // positioned between two strings, e.g. `index + 1`.
-    let i = 0,
-      pos = 0;
-    let _content = rawStrings[0];
+    let i = 0;
+    let p = 0;
+    const _content = new Array(rawStrings.length + rawValues.length);
+    _content[p++] = rawStrings[0];
     while (i < rawValues.length) {
       let child = rawValues[i++];
       const rawString = rawStrings[i];
-      if (child === undefined || child === null) {
-        _content += rawString;
-      } else {
-        _content += child + rawString;
+      if (child) {
+        _content[p++] = child;
       }
+      _content[p++] = rawString;
       if (child instanceof SqlRef) {
         this.dependencies.push(...child.dependencies);
         child = child.value;
@@ -50,62 +36,15 @@ export class Sql {
         this.declarations.push(child.id);
         child = child.value;
       }
-      // Check for nested `sql` queries.
       if (child instanceof Sql) {
-        // Append child prefix text to current string.
-        this.strings[pos] += child.strings[0];
-
-        let childIndex = 0;
-        while (childIndex < child.values.length) {
-          this.values[pos++] = child.values[childIndex++];
-          this.strings[pos] = child.strings[childIndex];
-        }
-
-        // Append raw string to current string.
-        this.strings[pos] += rawString;
         this.dependencies.push(...child.dependencies);
-      } else {
-        this.values[pos++] = child;
-        this.strings[pos] = rawString;
       }
     }
-    this.content = _content;
-  }
-
-  get text() {
-    const len = this.strings.length;
-    let i = 1;
-    let value = this.strings[0];
-    while (i < len) value += `$${i}${this.strings[i++]}`;
-    return value;
-  }
-
-  get sql() {
-    const len = this.strings.length;
-    let i = 1;
-    let value = this.strings[0];
-    while (i < len) value += `?${this.strings[i++]}`;
-    return value;
-  }
-
-  get statement() {
-    const len = this.strings.length;
-    let i = 1;
-    let value = this.strings[0];
-    while (i < len) value += `:${i}${this.strings[i++]}`;
-    return value;
+    this.content = _content.join('');
   }
 
   toString() {
     return this.content;
-  }
-
-  inspect() {
-    return {
-      text: this.text,
-      sql: this.sql,
-      values: this.values,
-    };
   }
 }
 
@@ -129,13 +68,6 @@ export function stmt(
   ...values: readonly RawValue[]
 ) {
   return new Sql(strings, values);
-}
-
-class Join {
-  constructor(
-    public readonly strings: readonly Sql[],
-    public readonly separator: string
-  ) {}
 }
 
 export function join(strings: readonly Sql[], separator: string) {

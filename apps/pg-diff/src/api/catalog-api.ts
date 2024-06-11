@@ -22,13 +22,18 @@ import {
   getSequences,
   getSequencePrivileges,
   getTablePolicies,
+  getTypes,
+  getDomains,
 } from './introspection';
 import {
   AggregateDefinition,
+  Column,
+  Domain,
   FunctionDefinition,
   MaterializedViewDefinition,
   Sequence,
   TableObject,
+  Type,
   ViewDefinition,
 } from '../models/database-objects';
 import { SqlRef } from '../stmt';
@@ -58,6 +63,66 @@ export class CatalogApi {
     return result;
   }
 
+  static async typeColumns(
+    client: ClientBase,
+    schema: string,
+    typename: string
+  ): Promise<Column[]> {
+    const { rows } = await getTableColumns(
+      client,
+      schema,
+      typename,
+      await getServerVersion(client)
+    );
+    return rows.map((row) => {
+      let columnIdentity: 'ALWAYS' | 'BY DEFAULT' | null = null;
+      let defaultValue = row.adsrc;
+      let dataType = COLUMN_TYPE_MAP[row.typname] ?? row.typname;
+      if (row.nspname !== 'pg_catalog' && row.nspname !== 'public') {
+        dataType = `${row.nspname}.${dataType}`;
+      }
+      let generatedColumn: 'STORED' | null = null;
+
+      switch (row.attidentity) {
+        case 'a':
+          columnIdentity = 'ALWAYS';
+          defaultValue = '';
+          break;
+        case 'd':
+          columnIdentity = 'BY DEFAULT';
+          defaultValue = '';
+          break;
+      }
+
+      switch (row.attgenerated) {
+        case 's':
+          generatedColumn = 'STORED';
+          break;
+      }
+      const functIdsMatch = row.adbin?.matchAll(/FUNCEXPR :funcid (\d+)/g);
+      const defaultFunctionIds = Array.from(functIdsMatch ?? []).map((m) =>
+        parseInt(m[1])
+      );
+      return {
+        id: row.id,
+        name: row.attname,
+        fullName: `"${schema}"."${typename}"."${row.attname}"`,
+        nullable: !row.attnotnull,
+        datatype: dataType,
+        dataTypeID: row.typeid,
+        dataTypeCategory: row.typcategory,
+        default: defaultValue,
+        defaultFunctionIds,
+        defaultRef: new SqlRef(defaultValue, defaultFunctionIds),
+        functionReferences: [],
+        precision: row.precision,
+        scale: row.scale,
+        identity: columnIdentity,
+        comment: row.comment,
+        generatedColumn: generatedColumn,
+      };
+    });
+  }
   static async retrieveTables(client: ClientBase, config: Config) {
     const result: Record<string, TableObject> = {};
     const tableNamesPriority: string[] = [];
@@ -73,7 +138,7 @@ export class CatalogApi {
           id: table.id,
           name: table.tablename,
           schema: table.schemaname,
-          fullName: `"${table.tablename}"."${table.schemaname}"`,
+          fullName: `"${table.schemaname}"."${table.tablename}"`,
           columns: {},
           constraints: {},
           options: {},
@@ -84,58 +149,13 @@ export class CatalogApi {
           comment: table.comment,
         });
 
-        const columns = await getTableColumns(
+        for (const col of await this.typeColumns(
           client,
-          table.schemaname,
-          table.tablename,
-          await getServerVersion(client)
-        );
-        columns.rows.forEach((column) => {
-          let columnName = `"${column.attname}"`;
-          let columnIdentity: 'ALWAYS' | 'BY DEFAULT' | null = null;
-          let defaultValue = column.adsrc;
-          let dataType = COLUMN_TYPE_MAP[column.typname] ?? column.typname;
-          let generatedColumn: 'STORED' | null = null;
-
-          switch (column.attidentity) {
-            case 'a':
-              columnIdentity = 'ALWAYS';
-              defaultValue = '';
-              break;
-            case 'd':
-              columnIdentity = 'BY DEFAULT';
-              defaultValue = '';
-              break;
-          }
-
-          switch (column.attgenerated) {
-            case 's':
-              generatedColumn = 'STORED';
-              break;
-          }
-          const functIdsMatch = column.adbin?.matchAll(
-            /FUNCEXPR :funcid (\d+)/g
-          );
-          const defaultFunctionIds = Array.from(functIdsMatch ?? []).map((m) =>
-            parseInt(m[1])
-          );
-          def.columns[columnName] = {
-            id: column.id,
-            nullable: !column.attnotnull,
-            datatype: dataType,
-            dataTypeID: column.typeid,
-            dataTypeCategory: column.typcategory,
-            default: defaultValue,
-            defaultFunctionIds,
-            defaultRef: new SqlRef(defaultValue, defaultFunctionIds),
-            functionReferences: [],
-            precision: column.precision,
-            scale: column.scale,
-            identity: columnIdentity,
-            comment: column.comment,
-            generatedColumn: generatedColumn,
-          };
-        });
+          def.schema,
+          def.name
+        )) {
+          def.columns[`"${col.name}"`] = col;
+        }
 
         const constraints = await getTableConstraints(
           client,
@@ -146,6 +166,7 @@ export class CatalogApi {
           let constraintName = `"${constraint.conname}"`;
           def.constraints[constraintName] = {
             id: constraint.id,
+            name: constraint.conname,
             relid: constraint.relid,
             type: constraint.contype,
             definition: constraint.definition,
@@ -255,6 +276,7 @@ export class CatalogApi {
             relid: row.polrelid,
             using,
             withCheck,
+            dependencies: [],
             permissive: row.polpermissive,
             comment: row.comment,
             name: row.polname,
@@ -437,13 +459,14 @@ export class CatalogApi {
           id: row.id,
           definition: row.definition,
           owner: row.owner,
-          prorettype: row.prorettype,
+          returnTypeId: row.returnTypeId,
+          argtypeids: row.argtypeids,
+          languageName: row.languageName,
           fullName: fullProcedureName,
           argTypes: row.argtypes,
           privileges: {},
           comment: row.comment,
-          fReferences: extractFunctionCalls(row.definition),
-          fReferenceIds: [],
+          fReferenceIds: [row.returnTypeId, ...row.argtypeids],
           type: row.prokind,
         });
 
@@ -468,49 +491,41 @@ export class CatalogApi {
           });
       })
     );
-    for (const f of list) {
-      if (f.fReferences.length === 0) {
-        continue;
-      }
-      /*f.fReferenceIds = f.fReferences
-        .filter((ref) => result[ref])
-        .map((ref) => Object.values(result[ref]).map((f) => f.id))
-        .flat();*/
-    }
-
     return { map: result, list };
   }
 
   static async retrieveAggregates(client: ClientBase, config: Config) {
     const result: Record<string, Record<string, AggregateDefinition>> = {};
-    const aggregates = await getAggregates(
+    const { rows } = await getAggregates(
       client,
       config.compareOptions.schemaCompare.namespaces,
       await getServerVersion(client)
     );
     await Promise.all(
-      aggregates.rows.map(async (aggregate) => {
-        const fullAggregateName = `"${aggregate.nspname}"."${aggregate.proname}"`;
-        const map = (result[fullAggregateName] ??= {});
-        const def = (map[aggregate.argtypes] = {
-          id: aggregate.id,
-          definition: aggregate.definition,
-          prorettype: aggregate.prorettype,
-          owner: aggregate.owner,
-          fullName: fullAggregateName,
+      rows.map(async (row) => {
+        const fullName = `"${row.nspname}"."${row.proname}"`;
+        const map = (result[fullName] ??= {});
+        const def = (map[row.argtypes] = {
+          id: row.id,
+          definition: row.definition,
+          returnTypeId: row.returnTypeId,
+          argtypeids: row.argtypeids,
+          owner: row.owner,
+          fullName,
+          languageName: row.languageName,
           fReferences: [],
           fReferenceIds: [],
           type: 'f',
-          argTypes: aggregate.argtypes,
+          argTypes: row.argtypes,
           privileges: {},
-          comment: aggregate.comment,
+          comment: row.comment,
         });
 
         const privileges = await getFunctionPrivileges(
           client,
-          aggregate.nspname,
-          aggregate.proname,
-          aggregate.argtypes
+          row.nspname,
+          row.proname,
+          row.argtypes
         );
 
         privileges.rows
@@ -589,27 +604,68 @@ export class CatalogApi {
     );
     return result;
   }
-}
 
-function extractFunctionCalls(sqlFunctionBody: string): string[] {
-  sqlFunctionBody = sqlFunctionBody.substring(
-    sqlFunctionBody.indexOf('RETURNS')
-  );
-  // Define a regex to match function calls
-  const functionCallRegex = /(\w+(\.\w+)+)\s*\(/g;
-  let functionCalls = [];
-  let match;
+  static async retrieveTypes(client: ClientBase, config: Config) {
+    const result: Record<string, Type> = {};
 
-  // Use the regex to find all function calls in the SQL function body
-  while ((match = functionCallRegex.exec(sqlFunctionBody)) !== null) {
-    // match[1] contains the function name (e.g., "app_hidden.on_order_paid")
-    functionCalls.push(
-      match[1]
-        .split('.')
-        .map((v) => `"${v}"`)
-        .join('.')
+    const { rows } = await getTypes(
+      client,
+      config.compareOptions.schemaCompare.namespaces
     );
+
+    await Promise.all(
+      rows.map(async (row) => {
+        const fullName = `"${row.schema}"."${row.name}"`;
+        const def = (result[fullName] = {
+          id: row.id,
+          fullName,
+          schema: row.schema,
+          name: row.name,
+          comment: row.comment,
+          owner: row.owner,
+          enum: row.values.length > 0 ? row.values : undefined,
+          columns: {},
+        });
+        for (const col of await this.typeColumns(
+          client,
+          def.schema,
+          def.name
+        )) {
+          def.columns[`"${col.name}"`] = col;
+        }
+      })
+    );
+    return result;
   }
 
-  return functionCalls;
+  static async retrieveDomains(client: ClientBase, config: Config) {
+    const result: Record<string, Domain> = {};
+
+    const { rows } = await getDomains(
+      client,
+      config.compareOptions.schemaCompare.namespaces
+    );
+
+    await Promise.all(
+      rows.map(async (row) => {
+        const fullName = `"${row.schema}"."${row.name}"`;
+        const def = (result[fullName] = {
+          id: row.id,
+          fullName,
+          type: {
+            id: row.typbasetype,
+            fullName: `"${row.typeschema}"."${row.typename}"`,
+          },
+          schema: row.schema,
+          name: row.name,
+          comment: row.comment,
+          owner: row.owner,
+          check: row.check,
+          constraintName: row.constraintName,
+        });
+        return def;
+      })
+    );
+    return result;
+  }
 }

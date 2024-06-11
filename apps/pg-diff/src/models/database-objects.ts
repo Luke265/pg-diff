@@ -4,9 +4,10 @@ export interface FunctionDefinition {
   id: number;
   argTypes: string;
   fullName: string;
-  prorettype: number;
+  returnTypeId: number;
+  argtypeids: number[];
+  languageName: string;
   comment: string | null;
-  fReferences: string[];
   fReferenceIds: number[];
   definition: string;
   owner: string;
@@ -32,6 +33,7 @@ export interface FunctionPrivileges {
 }
 export interface ConstraintDefinition {
   id: number;
+  name: string;
   relid: number;
   type: string;
   definition: string;
@@ -100,6 +102,8 @@ export type ColumnType =
 export interface Column {
   id: string;
   nullable: boolean;
+  fullName: string;
+  name: string;
   datatype: ColumnType | string;
   dataTypeID: number;
   dataTypeCategory: DataTypeCategory;
@@ -124,6 +128,7 @@ export interface Policy {
   name: string;
   comment: string | null;
   using: string | null;
+  dependencies: (string | number)[];
   withCheck: string | null;
   roles: string[];
 }
@@ -148,7 +153,9 @@ export interface AggregateDefinition {
   id: number;
   definition: string;
   fullName: string;
-  prorettype: number;
+  returnTypeId: number;
+  argtypeids: number[];
+  languageName: string;
   type: 'f';
   owner: string;
   fReferences: string[];
@@ -172,6 +179,30 @@ export interface Sequence {
   privileges: Record<string, SequencePrivileges>;
   comment: null | string;
 }
+export interface Type {
+  id: number;
+  schema: string;
+  name: string;
+  owner: string;
+  comment: string | null;
+  enum?: string[];
+  fullName: string;
+  columns: Record<string, Column>;
+}
+export interface Domain {
+  id: number;
+  type: {
+    id: number;
+    fullName: string;
+  };
+  constraintName: string;
+  schema: string;
+  name: string;
+  owner: string;
+  comment: string | null;
+  fullName: string;
+  check: string;
+}
 export interface DatabaseObjects {
   schemas: Record<string, Schema>;
   tables: Record<string, TableObject>;
@@ -181,4 +212,6 @@ export interface DatabaseObjects {
   functions: FunctionDefinition[];
   aggregates: Record<string, Record<string, AggregateDefinition>>;
   sequences: Record<string, Sequence>;
+  types: Record<string, Type>;
+  domains: Record<string, Domain>;
 }
