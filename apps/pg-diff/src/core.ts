@@ -1,7 +1,7 @@
 import path from 'path';
 import pg from 'pg';
 import { migrationHistoryTableSchema } from './models/migration-history-table-schema';
-import sql from './sql-script-generator';
+import * as sql from './sql-script-generator';
 import { PatchInfo } from './models/patch-info';
 import { ServerVersion } from './models/server-version';
 import { Config } from './models/config';
@@ -9,6 +9,7 @@ import { Client } from 'pg';
 import { ClientConfig } from './models/client-config';
 import { execSync } from 'child_process';
 import { MigrationConfig } from './models/migration-config';
+import { TableObject } from './models/database-objects';
 
 export class core {
   static prepareMigrationConfig(config: Config): MigrationConfig {
@@ -69,9 +70,9 @@ export class core {
 
     let sqlScript = sql.generateCreateTableScript(
       config.migrationHistory.tableName,
-      migrationHistoryTableSchema
+      migrationHistoryTableSchema as unknown as TableObject
     );
-    await pgClient.query(sqlScript);
+    await pgClient.query(sqlScript.toString());
   }
 
   static getPatchFileInfo(filename: string, filepath: string) {

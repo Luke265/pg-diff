@@ -3,34 +3,6 @@ import { core } from '../core';
 import { ServerVersion } from '../models/server-version';
 import { DataTypeCategory } from '../models/database-objects';
 
-export interface TableInfoRow {
-  schemaname: string;
-  tablename: string;
-  tableowner: string;
-  comment: string | null;
-}
-
-export interface TableColumnRow {
-  attname: string;
-  attnotnull: boolean;
-  typname: string;
-  typeid: number;
-  typcategory: DataTypeCategory;
-  adsrc: string | null;
-  attidentity: string;
-  attgenerated: string;
-  precision: number | null;
-  scale: number | null;
-  comment: string | null;
-}
-
-export interface ViewRow {
-  schemaname: string;
-  viewname: string;
-  viewowner: string;
-  definition: string;
-  comment: string | null;
-}
 export interface PrivilegeRow {
   schemaname: string;
   tablename: string;
@@ -43,13 +15,7 @@ export interface PrivilegeRow {
   references: boolean;
   trigger: boolean;
 }
-export interface MaterializedViewRow {
-  schemaname: string;
-  matviewname: string;
-  matviewowner: string;
-  definition: string;
-  comment: string | null;
-}
+
 export interface ViewPrivilegeRow {
   schemaname: string;
   viewname: string;
@@ -78,37 +44,7 @@ export interface SequencePrivilegeRow {
   update: boolean;
   cache_value: string | null;
 }
-export interface SequenceRow {
-  seq_nspname: string;
-  seq_name: string;
-  owner: string;
-  ownedby_table: string | null;
-  ownedby_column: string | null;
-  start_value: string;
-  minimum_value: string;
-  maximum_value: string;
-  increment: string;
-  cycle_option: boolean;
-  cache_size: string;
-  comment: string | null;
-}
-export interface AggregateRow {
-  proname: string;
-  nspname: string;
-  owner: string;
-  argtypes: string;
-  definition: string;
-  comment: string | null;
-}
-export interface FunctionRow {
-  proname: string;
-  nspname: string;
-  definition: string;
-  owner: string;
-  argtypes: string;
-  comment: string;
-  prokind: 'f' | 'p';
-}
+
 export interface ViewDependencyRow {
   schemaname: string;
   tablename: string;
@@ -126,19 +62,6 @@ export interface MaterializedViewPrivilegeRow {
   references: boolean;
   trigger: boolean;
 }
-export interface IndexRow {
-  indexname: string;
-  indexdef: string;
-  comment: string | null;
-}
-export interface ContraintRow {
-  conname: string;
-  contype: string;
-  foreign_schema: string;
-  foreign_table: string;
-  definition: string;
-  comment: string | null;
-}
 
 export function getAllSchemas(client: ClientBase) {
   //TODO: Instead of using ::regrole casting, for better performance join with pg_roles
@@ -151,16 +74,24 @@ export function getAllSchemas(client: ClientBase) {
 export function getSchemas(client: ClientBase, schemas: string[]) {
   //TODO: Instead of using ::regrole casting, for better performance join with pg_roles
   return client.query<{
+    id: number;
     nspname: string;
     owner: string;
     comment: string | null;
-  }>(`SELECT n.nspname, n.nspowner::regrole::name as owner, d.description as comment
+  }>(`SELECT n.oid AS id, n.nspname, n.nspowner::regrole::name as owner, d.description as comment
       FROM pg_namespace n
       LEFT JOIN pg_description d ON d.objoid = n."oid" AND d.objsubid = 0
       WHERE nspname IN ('${schemas.join("','")}')`);
 }
+export interface TableInfoRow {
+  id: number;
+  schemaname: string;
+  tablename: string;
+  tableowner: string;
+  comment: string | null;
+}
 export function getTables(client: ClientBase, schemas: string[]) {
-  return client.query<TableInfoRow>(`SELECT t.schemaname, t.tablename, t.tableowner, d.description as comment
+  return client.query<TableInfoRow>(`SELECT c.oid AS id, t.schemaname, t.tablename, t.tableowner, d.description as comment
       FROM pg_tables t
       INNER JOIN pg_namespace n ON t.schemaname = n.nspname 
               INNER JOIN pg_class c ON t.tablename = c.relname AND c.relnamespace = n."oid" 
@@ -182,6 +113,21 @@ export function getTableOptions(
                   INNER JOIN pg_namespace n ON n."oid" = c.relnamespace AND n.nspname = '${schemaName}'
                   WHERE c.relname = '${tableName}'`);
 }
+export interface TableColumnRow {
+  id: string;
+  attname: string;
+  attnotnull: boolean;
+  typname: string;
+  typeid: number;
+  typcategory: DataTypeCategory;
+  adsrc: string | null;
+  attidentity: string;
+  adbin: string | null;
+  attgenerated: string;
+  precision: number | null;
+  scale: number | null;
+  comment: string | null;
+}
 export function getTableColumns(
   client: ClientBase,
   schemaName: string,
@@ -190,12 +136,14 @@ export function getTableColumns(
 ) {
   return client.query<TableColumnRow>(
     `SELECT 
+        CONCAT(attrelid, '-', attname) AS id,
         a.attname, 
         a.attnotnull, 
         t.typname, 
         t.oid as typeid, 
         t.typcategory, 
         pg_get_expr(ad.adbin ,ad.adrelid ) as adsrc, 
+        ad.adbin,
                   ${
                     core.checkServerCompatibility(serverVersion, 10, 0)
                       ? 'a.attidentity'
@@ -226,12 +174,22 @@ export function getTableColumns(
                   ORDER BY a.attnum ASC`
   );
 }
+export interface ContraintRow {
+  id: number;
+  relid: number;
+  conname: string;
+  contype: string;
+  foreign_schema: string;
+  foreign_table: string;
+  definition: string;
+  comment: string | null;
+}
 export function getTableConstraints(
   client: ClientBase,
   schemaName: string,
   tableName: string
 ) {
-  return client.query<ContraintRow>(`SELECT c.conname, c.contype, f_sch.nspname AS foreign_schema, f_tbl.relname AS foreign_table, 
+  return client.query<ContraintRow>(`SELECT c.oid AS id, c.confrelid AS relid, c.conname, c.contype, f_sch.nspname AS foreign_schema, f_tbl.relname AS foreign_table, 
                   pg_get_constraintdef(c.oid) as definition, d.description AS comment
                   FROM pg_constraint c
                   INNER JOIN pg_namespace n ON n.nspname = '${schemaName}'
@@ -241,12 +199,19 @@ export function getTableConstraints(
                   LEFT JOIN pg_description d ON d.objoid = c."oid" AND d.objsubid = 0
                   WHERE c.conrelid = cl.oid`);
 }
+export interface IndexRow {
+  id: string;
+  relid: number;
+  indexname: string;
+  indexdef: string;
+  comment: string | null;
+}
 export function getTableIndexes(
   client: ClientBase,
   schemaName: string,
   tableName: string
 ) {
-  return client.query<IndexRow>(`SELECT idx.relname as indexname, pg_get_indexdef(idx.oid) AS indexdef, d.description AS comment
+  return client.query<IndexRow>(`SELECT CONCAT(i.indexrelid, '-', i.indrelid) AS id, i.indexrelid AS relid, idx.relname as indexname, pg_get_indexdef(idx.oid) AS indexdef, d.description AS comment
                   FROM pg_index i
                   INNER JOIN pg_class tbl ON tbl.oid = i.indrelid
                   INNER JOIN pg_namespace tbln ON tbl.relnamespace = tbln.oid
@@ -270,8 +235,16 @@ export function getTablePrivileges(
                   FROM pg_tables t, pg_user u 
                   WHERE t.schemaname = '${schemaName}' and t.tablename='${tableName}'`);
 }
+export interface ViewRow {
+  id: number;
+  schemaname: string;
+  viewname: string;
+  viewowner: string;
+  definition: string;
+  comment: string | null;
+}
 export function getViews(client: ClientBase, schemas: string[]) {
-  return client.query<ViewRow>(`SELECT v.schemaname, v.viewname, v.viewowner, v.definition, d.description AS comment 
+  return client.query<ViewRow>(`SELECT c.oid AS id, v.schemaname, v.viewname, v.viewowner, v.definition, d.description AS comment 
                   FROM pg_views v
                   INNER JOIN pg_namespace n ON v.schemaname = n.nspname 
                   INNER JOIN pg_class c ON v.viewname = c.relname AND c.relnamespace = n."oid" 
@@ -299,8 +272,16 @@ export function getViewPrivileges(
                   FROM pg_views v, pg_user u 
                   WHERE v.schemaname = '${schemaName}' and v.viewname='${viewName}'`);
 }
+export interface MaterializedViewRow {
+  id: number;
+  schemaname: string;
+  matviewname: string;
+  matviewowner: string;
+  definition: string;
+  comment: string | null;
+}
 export function getMaterializedViews(client: ClientBase, schemas: string[]) {
-  return client.query<MaterializedViewRow>(`SELECT m.schemaname, m.matviewname, m.matviewowner, m.definition, d.description AS comment
+  return client.query<MaterializedViewRow>(`SELECT c.oid AS id, m.schemaname, m.matviewname, m.matviewowner, m.definition, d.description AS comment
                   FROM pg_matviews m
                   INNER JOIN pg_namespace n ON m.schemaname = n.nspname 
                   INNER JOIN pg_class c ON m.matviewname = c.relname AND c.relnamespace = n."oid" 
@@ -341,14 +322,32 @@ export function getViewDependencies(
                   INNER JOIN pg_class vc ON vc.relname = '${viewName}' AND vc.relnamespace = vn."oid" 
                   WHERE r.ev_class = vc.oid AND d.refobjid <> vc.oid`);
 }
+export interface FunctionRow {
+  id: number;
+  prorettype: number;
+  proname: string;
+  nspname: string;
+  definition: string;
+  owner: string;
+  argtypes: string;
+  comment: string;
+  prokind: 'f' | 'p';
+}
 export function getFunctions(
   client: ClientBase,
   schemas: string[],
   serverVersion: ServerVersion
 ) {
   //TODO: Instead of using ::regrole casting, for better performance join with pg_roles
-  return client.query<FunctionRow>(`SELECT p.proname, n.nspname, pg_get_functiondef(p.oid) as definition, p.proowner::regrole::name as owner, 
-                  oidvectortypes(proargtypes) as argtypes, d.description AS comment, p.prokind
+  return client.query<FunctionRow>(`SELECT p.oid AS id, 
+  p.prorettype,
+  p.proname, 
+  n.nspname,
+  pg_get_functiondef(p.oid) as definition,
+  p.proowner::regrole::name as owner, 
+  oidvectortypes(proargtypes) as argtypes, 
+  d.description AS comment,
+  p.prokind
                   FROM pg_proc p
                   INNER JOIN pg_namespace n ON n.oid = p.pronamespace
                   LEFT JOIN pg_description d ON d.objoid = p."oid" AND d.objsubid = 0
@@ -366,13 +365,69 @@ export function getFunctions(
                       WHERE d.deptype = 'e'
                   )`);
 }
+export interface PolicyRow {
+  id: number;
+  polname: string;
+  polrelid: number;
+  polroles: number[];
+  polpermissive: boolean;
+  policy_qual: string | null;
+  policy_with_check: string | null;
+  comment: string | null;
+  schema: string;
+  role_names: string[];
+  polcmd: '*' | 'w' | 'r' | 'a' | 'd';
+  table: string;
+}
+export function getTablePolicies(
+  client: ClientBase,
+  schema: string,
+  table: string
+) {
+  //TODO: Instead of using ::regrole casting, for better performance join with pg_roles
+  return client.query<PolicyRow>(`SELECT
+  p.oid AS id,
+  p.polname, 
+  p.polrelid,
+  p.polroles, 
+  ARRAY(
+    SELECT r.rolname
+    FROM
+        pg_roles r
+    WHERE
+        r.oid = ANY (p.polroles)
+    )::TEXT[] AS role_names,
+  p.polcmd,
+  p.polpermissive,
+  d.description AS comment, 
+  pg_get_expr(polqual, polrelid) AS policy_qual,
+  pg_get_expr(polwithcheck, polrelid) AS policy_with_check,
+  n.nspname AS schema,
+  t.relname AS table
+                  FROM pg_policy p
+                  INNER JOIN pg_class t ON t.oid = p.polrelid
+                  INNER JOIN pg_class c ON c."oid" = p.polrelid
+                  INNER JOIN pg_namespace n ON n.oid = c.relnamespace 
+                  LEFT JOIN pg_description d ON d.objoid = p."oid" AND d.objsubid = 0
+                  WHERE n.nspname = '${schema}' AND t.relname = '${table}'`);
+}
+export interface AggregateRow {
+  id: number;
+  proname: string;
+  nspname: string;
+  owner: string;
+  argtypes: string;
+  prorettype: number;
+  definition: string;
+  comment: string | null;
+}
 export function getAggregates(
   client: ClientBase,
   schemas: string[],
   serverVersion: ServerVersion
 ) {
   //TODO: Instead of using ::regrole casting, for better performance join with pg_roles
-  return client.query<AggregateRow>(`SELECT p.proname, n.nspname, p.proowner::regrole::name as owner, oidvectortypes(p.proargtypes) as argtypes,
+  return client.query<AggregateRow>(`SELECT p.oid AS id, p.prorettype, p.proname, n.nspname, p.proowner::regrole::name as owner, oidvectortypes(p.proargtypes) as argtypes,
                   format('%s', array_to_string(
                       ARRAY[
                           format(E'\\tSFUNC = %s', a.aggtransfn::text)
@@ -456,13 +511,28 @@ export function getFunctionPrivileges(
                   INNER JOIN pg_namespace n ON n.nspname = '${schemaName}' 				
                   WHERE p.proname='${functionName}' AND p.pronamespace = n.oid`);
 }
+export interface SequenceRow {
+  id: number;
+  seq_nspname: string;
+  seq_name: string;
+  owner: string;
+  ownedby_table: string | null;
+  ownedby_column: string | null;
+  start_value: string;
+  minimum_value: string;
+  maximum_value: string;
+  increment: string;
+  cycle_option: boolean;
+  cache_size: string;
+  comment: string | null;
+}
 
 export function getSequences(
   client: ClientBase,
   schemas: string[],
   serverVersion: ServerVersion
 ) {
-  return client.query<SequenceRow>(`SELECT s.seq_nspname, s.seq_name, s.owner, s.ownedby_table, s.ownedby_column, p.start_value, p.minimum_value, p.maximum_value, p.increment, p.cycle_option, 
+  return client.query<SequenceRow>(`SELECT s.oid AS id, s.seq_nspname, s.seq_name, s.owner, s.ownedby_table, s.ownedby_column, p.start_value, p.minimum_value, p.maximum_value, p.increment, p.cycle_option, 
                   ${
                     core.checkServerCompatibility(serverVersion, 10, 0)
                       ? 'p.cache_size'

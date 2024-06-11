@@ -8,8 +8,10 @@ export interface Config {
     outputDirectory: string;
     author: string;
     getAuthorFromGit: boolean;
+    mapRole: (input: string) => string;
     schemaCompare: {
       namespaces: string[];
+      sequence: boolean;
       dropMissingTable: boolean;
       dropMissingView: boolean;
       dropMissingFunction: boolean;

@@ -9,6 +9,7 @@ import {
   FunctionPrivileges,
   IndexDefinition,
   MaterializedViewDefinition,
+  Policy,
   Privileges,
   Schema,
   Sequence,
@@ -17,10 +18,11 @@ import {
   TableOptions,
   ViewDefinition,
 } from '../models/database-objects';
-import sql from '../sql-script-generator';
+import { SequenceProperties } from '../sql-script-generator';
+import * as sql from '../sql-script-generator';
 import { TableData } from '../models/table-data';
 import objectType from '../enums/object-type';
-import { isEqual } from 'lodash';
+import { add, isEqual } from 'lodash';
 import path from 'path';
 import fs from 'fs';
 import EventEmitter from 'events';
@@ -28,8 +30,9 @@ import { Config } from '../models/config';
 import { TableDefinition } from '../models/table-definition';
 import { ClientBase } from 'pg';
 import { getServerVersion } from '../utils';
+import { Sql, SqlRef, stmt } from '../stmt';
 
-interface Changes {
+export interface ColumnChanges {
   datatype?: any;
   dataTypeID?: any;
   dataTypeCategory?: any;
@@ -37,6 +40,7 @@ interface Changes {
   scale?: any;
   nullable?: any;
   default?: any;
+  defaultRef?: SqlRef;
   identity?: any;
   isNewIdentity?: any;
   truncate?: any;
@@ -48,6 +52,10 @@ interface Changes {
   delete?: any;
   execute?: any;
   usage?: any;
+}
+
+export interface Context {
+  mapRole: (input: string) => string;
 }
 
 export class CompareApi {
@@ -97,33 +105,22 @@ export class CompareApi {
     );
     eventEmitter.emit('compare', 'Collected TARGET objects', 40);
 
-    let droppedConstraints: string[] = [];
-    let droppedIndexes: string[] = [];
-    let droppedViews: string[] = [];
-    let addedColumns: any = {};
-    let addedTables: any[] = [];
-
-    let scripts = this.compareDatabaseObjects(
+    const { dropped, added, ddl } = this.compareDatabaseObjects(
       dbSourceObjects,
       dbTargetObjects,
-      droppedConstraints,
-      droppedIndexes,
-      droppedViews,
-      addedColumns,
-      addedTables,
       config,
       eventEmitter
     );
 
     //The progress step size is 20
     if (config.compareOptions.dataCompare.enable) {
-      scripts.push(
+      ddl.push(
         ...(await this.compareTablesRecords(
           config,
           pgSourceClient,
           pgTargetClient,
-          addedColumns,
-          addedTables,
+          added.columns,
+          added.tables,
           dbSourceObjects,
           dbTargetObjects,
           eventEmitter
@@ -133,7 +130,7 @@ export class CompareApi {
     }
 
     let scriptFilePath = await this.saveSqlScript(
-      scripts,
+      ddl,
       config,
       scriptName,
       eventEmitter
@@ -150,7 +147,8 @@ export class CompareApi {
       tables: {},
       views: {},
       materializedViews: {},
-      functions: {},
+      functionMap: {},
+      functions: [],
       aggregates: {},
       sequences: {},
     };
@@ -177,7 +175,19 @@ export class CompareApi {
       client,
       config
     );
-    dbObjects.functions = await CatalogApi.retrieveFunctions(client, config);
+    const { map: functionMap, list: functionList } =
+      await CatalogApi.retrieveFunctions(client, config);
+    dbObjects.functionMap = functionMap;
+    dbObjects.functions = functionList;
+    for (const name in dbObjects.tables) {
+      const table = dbObjects.tables[name];
+      for (const columnName in table.columns) {
+        const column = table.columns[columnName];
+        column.functionReferences = column.defaultFunctionIds.map((id) =>
+          dbObjects.functions.find((f) => f.id === id)
+        );
+      }
+    }
     dbObjects.aggregates = await CatalogApi.retrieveAggregates(client, config);
     dbObjects.sequences = await CatalogApi.retrieveSequences(client, config);
 
@@ -193,15 +203,15 @@ export class CompareApi {
   static compareDatabaseObjects(
     dbSourceObjects: DatabaseObjects,
     dbTargetObjects: DatabaseObjects,
-    droppedConstraints: string[],
-    droppedIndexes: string[],
-    droppedViews: string[],
-    addedColumns: any,
-    addedTables: string[],
     config: Config,
     eventEmitter: EventEmitter
   ) {
-    let sqlPatch: string[] = [];
+    const droppedConstraints: string[] = [];
+    const droppedIndexes: string[] = [];
+    const droppedViews: string[] = [];
+    const addedColumns: Record<string, any> = {};
+    const addedTables: any[] = [];
+    const sqlPatch: Sql[] = [];
 
     sqlPatch.push(
       ...this.compareSchemas(dbSourceObjects.schemas, dbTargetObjects.schemas)
@@ -210,6 +220,7 @@ export class CompareApi {
 
     sqlPatch.push(
       ...this.compareSequences(
+        config,
         dbSourceObjects.sequences,
         dbTargetObjects.sequences
       )
@@ -257,8 +268,8 @@ export class CompareApi {
 
     sqlPatch.push(
       ...this.compareProcedures(
-        dbSourceObjects.functions,
-        dbTargetObjects.functions,
+        dbSourceObjects.functionMap,
+        dbTargetObjects.functionMap,
         config
       )
     );
@@ -273,16 +284,33 @@ export class CompareApi {
     );
     eventEmitter.emit('compare', 'AGGREGATE objects have been compared', 75);
 
-    return sqlPatch;
+    const policyChanges = this.comparePolicies(
+      config,
+      dbSourceObjects.tables,
+      dbTargetObjects.tables
+    );
+
+    return {
+      dropped: {
+        constraints: droppedConstraints,
+        indexes: droppedIndexes,
+        views: droppedViews,
+      },
+      added: {
+        columns: addedColumns,
+        tables: addedTables,
+      },
+      ddl: [...policyChanges.drop, ...sqlPatch, ...policyChanges.create],
+    };
   }
 
-  static finalizeScript(scriptLabel: string, sqlScript: string[]) {
-    let finalizedScript: string[] = [];
+  static finalizeScript(scriptLabel: string, sqlScript: Sql[]) {
+    const finalizedScript: Sql[] = [];
 
     if (sqlScript.length > 0) {
-      finalizedScript.push(`\n--- BEGIN ${scriptLabel} ---\n`);
+      finalizedScript.push(stmt`--- BEGIN ${scriptLabel} ---`);
       finalizedScript.push(...sqlScript);
-      finalizedScript.push(`\n--- END ${scriptLabel} ---\n`);
+      finalizedScript.push(stmt`--- END ${scriptLabel} ---`);
     }
 
     return finalizedScript;
@@ -292,32 +320,34 @@ export class CompareApi {
     sourceSchemas: Record<string, Schema>,
     targetSchemas: Record<string, Schema>
   ) {
-    const finalizedScript: string[] = [];
+    const finalizedScript: Sql[] = [];
     for (const sourceSchema in sourceSchemas) {
-      const sourceDef = sourceSchemas[sourceSchema];
-      const targetDef = targetSchemas[sourceSchema];
-      const sqlScript: string[] = [];
+      const sourceObj = sourceSchemas[sourceSchema];
+      const targetObj = targetSchemas[sourceSchema];
+      const sqlScript: Sql[] = [];
 
-      if (!targetDef) {
+      if (!targetObj) {
         //Schema not exists on target database, then generate script to create schema
         sqlScript.push(
-          sql.generateCreateSchemaScript(sourceSchema, sourceDef.owner)
+          sql.generateCreateSchemaScript(sourceSchema, sourceObj.owner)
         );
         sqlScript.push(
           sql.generateChangeCommentScript(
+            sourceObj.id,
             objectType.SCHEMA,
             sourceSchema,
-            sourceDef.comment
+            sourceObj.comment
           )
         );
       }
 
-      if (targetDef && sourceDef.comment != targetDef.comment)
+      if (targetObj && sourceObj.comment != targetObj.comment)
         sqlScript.push(
           sql.generateChangeCommentScript(
+            sourceObj.id,
             objectType.SCHEMA,
             sourceSchema,
-            sourceDef.comment
+            sourceObj.comment
           )
         );
 
@@ -342,32 +372,32 @@ export class CompareApi {
     addedTables: string[],
     config: Config
   ) {
-    let finalizedScript: string[] = [];
+    const finalizedScript: Sql[] = [];
 
     for (const sourceTable in sourceTables) {
-      const sourceTableDef = sourceTables[sourceTable];
-      const targetTableDef = dbTargetObjects.tables[sourceTable];
-      let sqlScript: string[] = [];
+      const sourceObj = sourceTables[sourceTable];
+      const targetObj = dbTargetObjects.tables[sourceTable];
+      const sqlScript: Sql[] = [];
       let actionLabel = '';
 
-      if (targetTableDef) {
+      if (targetObj) {
         //Table exists on both database, then compare table schema
         actionLabel = 'ALTER';
 
         //@mso -> relhadoids has been deprecated from PG v12.0
-        if (targetTableDef.options)
+        if (targetObj.options)
           sqlScript.push(
             ...this.compareTableOptions(
               sourceTable,
-              sourceTableDef.options,
-              targetTableDef.options
+              sourceObj.options,
+              targetObj.options
             )
           );
 
         sqlScript.push(
           ...this.compareTableColumns(
             sourceTable,
-            sourceTableDef.columns,
+            sourceObj.columns,
             dbTargetObjects,
             droppedConstraints,
             droppedIndexes,
@@ -378,17 +408,17 @@ export class CompareApi {
 
         sqlScript.push(
           ...this.compareTableConstraints(
-            sourceTable,
-            sourceTableDef.constraints,
-            targetTableDef.constraints,
+            sourceObj,
+            sourceObj.constraints,
+            targetObj.constraints,
             droppedConstraints
           )
         );
 
         sqlScript.push(
           ...this.compareTableIndexes(
-            sourceTableDef.indexes,
-            targetTableDef.indexes,
+            sourceObj.indexes,
+            targetObj.indexes,
             droppedIndexes
           )
         );
@@ -396,40 +426,38 @@ export class CompareApi {
         sqlScript.push(
           ...this.compareTablePrivileges(
             sourceTable,
-            sourceTableDef.privileges,
-            targetTableDef.privileges,
+            sourceObj.privileges,
+            targetObj.privileges,
             config
           )
         );
 
-        if (sourceTableDef.owner != targetTableDef.owner)
+        const owner = config.compareOptions.mapRole(sourceObj.owner);
+        if (owner != targetObj.owner)
           sqlScript.push(
-            sql.generateChangeTableOwnerScript(
-              sourceTable,
-              sourceTableDef.owner
-            )
+            sql.generateChangeTableOwnerScript(sourceTable, owner)
           );
-
-        if (sourceTableDef.comment != targetTableDef.comment)
+        if (!commentIsEqual(sourceObj.comment, targetObj?.comment)) {
           sqlScript.push(
             sql.generateChangeCommentScript(
+              sourceObj.id,
               objectType.TABLE,
               sourceTable,
-              sourceTableDef.comment
+              sourceObj.comment
             )
           );
+        }
       } else {
         //Table not exists on target database, then generate the script to create table
         actionLabel = 'CREATE';
         addedTables.push(sourceTable);
-        sqlScript.push(
-          sql.generateCreateTableScript(sourceTable, sourceTableDef)
-        );
+        sqlScript.push(sql.generateCreateTableScript(sourceTable, sourceObj));
         sqlScript.push(
           sql.generateChangeCommentScript(
+            sourceObj.id,
             objectType.TABLE,
             sourceTable,
-            sourceTableDef.comment
+            sourceObj.comment
           )
         );
       }
@@ -445,7 +473,7 @@ export class CompareApi {
         : '';
 
       for (let table in dbTargetObjects.tables) {
-        let sqlScript: string[] = [];
+        let sqlScript: Sql[] = [];
 
         if (!sourceTables[table as any] && table != migrationFullTableName)
           sqlScript.push(sql.generateDropTableScript(table));
@@ -481,7 +509,7 @@ export class CompareApi {
     droppedViews: string[],
     addedColumns: any
   ) {
-    const sqlScript: string[] = [];
+    const sqlScript: Sql[] = [];
     const targetTable = dbTargetObjects.tables[tableName];
     for (const sourceTableColumn in sourceTableColumns) {
       const sourceColumnDef = sourceTableColumns[sourceTableColumn];
@@ -510,6 +538,7 @@ export class CompareApi {
         );
         sqlScript.push(
           sql.generateChangeCommentScript(
+            sourceColumnDef.id,
             objectType.COLUMN,
             `${tableName}.${sourceTableColumn}`,
             sourceColumnDef.comment
@@ -541,8 +570,8 @@ export class CompareApi {
     droppedIndexes: string[],
     droppedViews: string[]
   ) {
-    let sqlScript: string[] = [];
-    let changes: Changes = {};
+    let sqlScript: Sql[] = [];
+    let changes: ColumnChanges = {};
     let targetTable = dbTargetObjects.tables[tableName];
     let targetTableColumn = targetTable.columns[columnName];
 
@@ -561,8 +590,10 @@ export class CompareApi {
       changes.scale = sourceTableColumn.scale;
     }
 
-    if (sourceTableColumn.default != targetTableColumn.default)
+    if (sourceTableColumn.default != targetTableColumn.default) {
       changes.default = sourceTableColumn.default;
+      changes.defaultRef = sourceTableColumn.defaultRef;
+    }
 
     if (sourceTableColumn.identity != targetTableColumn.identity) {
       changes.identity = sourceTableColumn.identity;
@@ -628,7 +659,9 @@ export class CompareApi {
           indexDefinition.includes(`${rawColumnName})`, serachStartingIndex) ||
           indexDefinition.includes(`${columnName}`, serachStartingIndex)
         ) {
-          sqlScript.push(sql.generateDropIndexScript(index));
+          sqlScript.push(
+            sql.generateDropIndexScript(targetTable.indexes[index])
+          );
           droppedIndexes.push(index);
         }
       }
@@ -671,6 +704,7 @@ export class CompareApi {
     if (sourceTableColumn.comment != targetTableColumn.comment)
       sqlScript.push(
         sql.generateChangeCommentScript(
+          sourceTableColumn.id,
           objectType.COLUMN,
           `${tableName}.${columnName}`,
           sourceTableColumn.comment
@@ -681,95 +715,87 @@ export class CompareApi {
   }
 
   static compareTableConstraints(
-    tableName: string,
+    table: TableObject,
     sourceTableConstraints: Record<string, ConstraintDefinition>,
     targetTableConstraints: Record<string, ConstraintDefinition>,
     droppedConstraints: string[]
   ) {
-    let sqlScript: string[] = [];
-
-    for (let constraint in sourceTableConstraints) {
+    const sqlScript: Sql[] = [];
+    for (const constraint in sourceTableConstraints) {
+      const sourceObj = sourceTableConstraints[constraint];
+      const targetObj = targetTableConstraints[constraint];
       //Get new or changed constraint
-      if (targetTableConstraints[constraint]) {
+      if (targetObj) {
         //Table constraint exists on both database, then compare column schema
-        if (
-          sourceTableConstraints[constraint].definition !=
-          targetTableConstraints[constraint].definition
-        ) {
+        if (sourceObj.definition !== targetObj.definition) {
           if (!droppedConstraints.includes(constraint)) {
             sqlScript.push(
-              sql.generateDropTableConstraintScript(tableName, constraint)
+              sql.generateDropTableConstraintScript(table.name, constraint)
             );
           }
           sqlScript.push(
-            sql.generateAddTableConstraintScript(
-              tableName,
-              constraint,
-              sourceTableConstraints[constraint]
-            )
+            sql.generateAddTableConstraintScript(table, constraint, sourceObj)
           );
-          sqlScript.push(
-            sql.generateChangeCommentScript(
-              objectType.CONSTRAINT,
-              constraint,
-              sourceTableConstraints[constraint].comment,
-              tableName
-            )
-          );
+          if (sourceObj.comment) {
+            sqlScript.push(
+              sql.generateChangeCommentScript(
+                sourceObj.id,
+                objectType.CONSTRAINT,
+                constraint,
+                sourceObj.comment,
+                table.fullName
+              )
+            );
+          }
         } else {
           if (droppedConstraints.includes(constraint)) {
             //It will recreate a dropped constraints because changes happens on involved columns
             sqlScript.push(
-              sql.generateAddTableConstraintScript(
-                tableName,
-                constraint,
-                sourceTableConstraints[constraint]
-              )
+              sql.generateAddTableConstraintScript(table, constraint, sourceObj)
             );
-            sqlScript.push(
-              sql.generateChangeCommentScript(
-                objectType.CONSTRAINT,
-                constraint,
-                sourceTableConstraints[constraint].comment,
-                tableName
-              )
-            );
-          } else {
-            if (
-              sourceTableConstraints[constraint].comment !=
-              targetTableConstraints[constraint].comment
-            )
+            if (sourceObj.comment) {
               sqlScript.push(
                 sql.generateChangeCommentScript(
+                  sourceObj.id,
                   objectType.CONSTRAINT,
                   constraint,
-                  sourceTableConstraints[constraint].comment,
-                  tableName
+                  sourceObj.comment,
+                  table.fullName
                 )
               );
+            }
+          } else {
+            if (!commentIsEqual(sourceObj.comment, targetObj.comment)) {
+              sqlScript.push(
+                sql.generateChangeCommentScript(
+                  sourceObj.id,
+                  objectType.CONSTRAINT,
+                  constraint,
+                  sourceObj.comment,
+                  table.fullName
+                )
+              );
+            }
           }
         }
       } else {
         //Table constraint not exists on target database, then generate script to add constraint
         sqlScript.push(
-          sql.generateAddTableConstraintScript(
-            tableName,
-            constraint,
-            sourceTableConstraints[constraint]
-          )
+          sql.generateAddTableConstraintScript(table, constraint, sourceObj)
         );
         sqlScript.push(
           sql.generateChangeCommentScript(
+            sourceObj.id,
             objectType.CONSTRAINT,
             constraint,
-            sourceTableConstraints[constraint].comment,
-            tableName
+            sourceObj.comment,
+            table.fullName
           )
         );
       }
     }
 
-    for (let constraint in targetTableConstraints) {
+    for (const constraint in targetTableConstraints) {
       //Get dropped constraints
       if (
         !sourceTableConstraints[constraint] &&
@@ -777,7 +803,7 @@ export class CompareApi {
       )
         //Table constraint not exists on source, then generate script to drop constraint
         sqlScript.push(
-          sql.generateDropTableConstraintScript(tableName, constraint)
+          sql.generateDropTableConstraintScript(table.name, constraint)
         );
     }
 
@@ -789,60 +815,60 @@ export class CompareApi {
     targetTableIndexes: Record<string, IndexDefinition>,
     droppedIndexes: string[]
   ) {
-    let sqlScript: string[] = [];
+    let sqlScript: Sql[] = [];
 
     for (let index in sourceTableIndexes) {
+      const sourceObj = sourceTableIndexes[index];
+      const targetObj = targetTableIndexes[index];
       //Get new or changed indexes
-      if (targetTableIndexes[index]) {
+      if (targetObj) {
         //Table index exists on both database, then compare index definition
-        if (
-          sourceTableIndexes[index].definition !=
-          targetTableIndexes[index].definition
-        ) {
+        if (sourceObj.definition != targetObj.definition) {
           if (!droppedIndexes.includes(index)) {
-            sqlScript.push(sql.generateDropIndexScript(index));
+            sqlScript.push(sql.generateDropIndexScript(sourceObj));
           }
-          sqlScript.push(`\n${sourceTableIndexes[index].definition};\n`);
+          sqlScript.push(stmt`${sourceObj.definition};`);
           sqlScript.push(
             sql.generateChangeCommentScript(
+              sourceObj.id,
               objectType.INDEX,
-              `"${sourceTableIndexes[index].schema}"."${index}"`,
-              sourceTableIndexes[index].comment
+              `"${sourceObj.schema}"."${index}"`,
+              sourceObj.comment
             )
           );
         } else {
           if (droppedIndexes.includes(index)) {
             //It will recreate a dropped index because changes happens on involved columns
-            sqlScript.push(`\n${sourceTableIndexes[index].definition};\n`);
+            sqlScript.push(stmt`${sourceObj.definition};`);
             sqlScript.push(
               sql.generateChangeCommentScript(
+                sourceObj.id,
                 objectType.INDEX,
-                `"${sourceTableIndexes[index].schema}"."${index}"`,
-                sourceTableIndexes[index].comment
+                `"${sourceObj.schema}"."${index}"`,
+                sourceObj.comment
               )
             );
           } else {
-            if (
-              sourceTableIndexes[index].comment !=
-              targetTableIndexes[index].comment
-            )
+            if (sourceObj.comment != targetObj.comment)
               sqlScript.push(
                 sql.generateChangeCommentScript(
+                  sourceObj.id,
                   objectType.INDEX,
-                  `"${sourceTableIndexes[index].schema}"."${index}"`,
-                  sourceTableIndexes[index].comment
+                  `"${sourceObj.schema}"."${index}"`,
+                  sourceObj.comment
                 )
               );
           }
         }
       } else {
         //Table index not exists on target database, then generate script to add index
-        sqlScript.push(`\n${sourceTableIndexes[index].definition};\n`);
+        sqlScript.push(stmt`${sourceObj.definition};`);
         sqlScript.push(
           sql.generateChangeCommentScript(
+            sourceObj.id,
             objectType.INDEX,
-            `"${sourceTableIndexes[index].schema}"."${index}"`,
-            sourceTableIndexes[index].comment
+            `"${sourceObj.schema}"."${index}"`,
+            sourceObj.comment
           )
         );
       }
@@ -852,10 +878,142 @@ export class CompareApi {
       //Get dropped indexes
       if (!sourceTableIndexes[index] && !droppedIndexes.includes(index))
         //Table index not exists on source, then generate script to drop index
-        sqlScript.push(sql.generateDropIndexScript(index));
+        sqlScript.push(sql.generateDropIndexScript(targetTableIndexes[index]));
     }
 
     return sqlScript;
+  }
+  /*
+  static _compareTablePolicies(
+    config: Config,
+    table: TableObject,
+    source: Record<string, Policy>,
+    target: Record<string, Policy>
+  ) {
+    const sqlScript: string[] = [];
+    for (const name in source) {
+      const sourceObj = source[name];
+      const targetObj = target[name];
+      const roles = sourceObj.roles.map(config.compareOptions.mapRole);
+      const isSame =
+        targetObj &&
+        sourceObj.using === targetObj.using &&
+        sourceObj.permissive === targetObj.permissive &&
+        sourceObj.withCheck === targetObj.withCheck &&
+        sourceObj.for === targetObj.for &&
+        isEqual(roles, targetObj.roles);
+      if (!isSame) {
+        if (targetObj) {
+          sqlScript.push(sql.dropPolicy(table.schema, table.name, name));
+        }
+        sqlScript.push(
+          sql.createPolicy(table.schema, table.name, {
+            ...sourceObj,
+            roles,
+          })
+        );
+      }
+      if (!commentIsEqual(sourceObj.comment, targetObj?.comment)) {
+        sqlScript.push(
+          sql.generateChangeCommentScript(
+            objectType.POLICY,
+            name,
+            sourceObj.comment,
+            `"${table.schema}"."${table.name}"`
+          )
+        );
+      }
+    }
+
+    for (const name in target) {
+      if (source[name]) {
+        continue;
+      }
+      sqlScript.push(sql.dropPolicy(table.schema, table.name, name));
+    }
+
+    return sqlScript;
+  }
+*/
+  static compareTablePolicies(
+    config: Config,
+    table: TableObject,
+    source: Record<string, Policy>,
+    target: Record<string, Policy>
+  ) {
+    const create: Sql[] = [];
+    const drop: Sql[] = [];
+    for (const name in source) {
+      const sourceObj = source[name];
+      const targetObj = target[name];
+      const roles = sourceObj.roles.map(config.compareOptions.mapRole);
+      const isSame =
+        targetObj &&
+        sourceObj.using === targetObj.using &&
+        sourceObj.permissive === targetObj.permissive &&
+        sourceObj.withCheck === targetObj.withCheck &&
+        sourceObj.for === targetObj.for &&
+        isEqual(roles, targetObj.roles);
+      if (!isSame) {
+        if (targetObj) {
+          drop.push(sql.dropPolicy(table.schema, table.name, name));
+        }
+        create.push(
+          sql.createPolicy(table.schema, table.name, {
+            ...sourceObj,
+            roles,
+          })
+        );
+      }
+      if (!commentIsEqual(sourceObj.comment, targetObj?.comment)) {
+        create.push(
+          sql.generateChangeCommentScript(
+            sourceObj.id,
+            objectType.POLICY,
+            name,
+            sourceObj.comment,
+            `"${table.schema}"."${table.name}"`
+          )
+        );
+      }
+    }
+
+    for (const name in target) {
+      if (source[name]) {
+        continue;
+      }
+      drop.push(sql.dropPolicy(table.schema, table.name, name));
+    }
+
+    return {
+      drop,
+      create,
+    };
+  }
+
+  static comparePolicies(
+    config: Config,
+    source: Record<string, TableObject>,
+    target: Record<string, TableObject>
+  ) {
+    const drop: Sql[][] = [];
+    const create: Sql[][] = [];
+    for (const name in source) {
+      const sourceObj = source[name];
+      const targetObj = target[name];
+      const policies = this.compareTablePolicies(
+        config,
+        sourceObj,
+        sourceObj.policies,
+        targetObj?.policies ?? {}
+      );
+      drop.push(policies.drop);
+      create.push(policies.create);
+    }
+    return {
+      drop: drop.flat(),
+      create: create.flat(),
+    };
   }
 
   static compareTablePrivileges(
@@ -864,7 +1022,7 @@ export class CompareApi {
     targetTablePrivileges: Record<string, Privileges>,
     config: Config
   ) {
-    let sqlScript: string[] = [];
+    let sqlScript: Sql[] = [];
 
     for (let role in sourceTablePrivileges) {
       // In case a list of specific roles hve been configured, the check will only contains those roles eventually.
@@ -877,7 +1035,7 @@ export class CompareApi {
       //Get new or changed role privileges
       if (targetTablePrivileges[role]) {
         //Table privileges for role exists on both database, then compare privileges
-        let changes: Changes = {};
+        let changes: ColumnChanges = {};
 
         if (
           sourceTablePrivileges[role].select !=
@@ -946,62 +1104,58 @@ export class CompareApi {
     droppedViews: string[],
     config: Config
   ) {
-    let finalizedScript: string[] = [];
+    let finalizedScript: Sql[] = [];
 
     for (let view in sourceViews) {
-      let sqlScript: string[] = [];
+      const sourceObj = sourceViews[view];
+      const targetObj = targetViews[view];
+      let sqlScript: Sql[] = [];
       let actionLabel = '';
 
-      if (targetViews[view]) {
+      if (targetObj) {
         //View exists on both database, then compare view schema
         actionLabel = 'ALTER';
 
-        let sourceViewDefinition = sourceViews[view].definition.replace(
-          /\r/g,
-          ''
-        );
-        let targetViewDefinition = targetViews[view].definition.replace(
-          /\r/g,
-          ''
-        );
+        let sourceViewDefinition = sourceObj.definition.replace(/\r/g, '');
+        let targetViewDefinition = targetObj.definition.replace(/\r/g, '');
         if (sourceViewDefinition != targetViewDefinition) {
           if (!droppedViews.includes(view))
             sqlScript.push(sql.generateDropViewScript(view));
-          sqlScript.push(sql.generateCreateViewScript(view, sourceViews[view]));
+          sqlScript.push(sql.generateCreateViewScript(view, sourceObj));
           sqlScript.push(
             sql.generateChangeCommentScript(
+              sourceObj.id,
               objectType.VIEW,
               view,
-              sourceViews[view].comment
+              sourceObj.comment
             )
           );
         } else {
           if (droppedViews.includes(view))
             //It will recreate a dropped view because changes happens on involved columns
-            sqlScript.push(
-              sql.generateCreateViewScript(view, sourceViews[view])
-            );
+            sqlScript.push(sql.generateCreateViewScript(view, sourceObj));
 
           sqlScript.push(
             ...this.compareTablePrivileges(
               view,
-              sourceViews[view].privileges,
-              targetViews[view].privileges,
+              sourceObj.privileges,
+              targetObj.privileges,
               config
             )
           );
 
-          if (sourceViews[view].owner != targetViews[view].owner)
+          if (sourceObj.owner != targetObj.owner)
             sqlScript.push(
-              sql.generateChangeTableOwnerScript(view, sourceViews[view].owner)
+              sql.generateChangeTableOwnerScript(view, sourceObj.owner)
             );
 
-          if (sourceViews[view].comment != targetViews[view].comment)
+          if (sourceObj.comment != targetObj.comment)
             sqlScript.push(
               sql.generateChangeCommentScript(
+                sourceObj.id,
                 objectType.VIEW,
                 view,
-                sourceViews[view].comment
+                sourceObj.comment
               )
             );
         }
@@ -1009,12 +1163,13 @@ export class CompareApi {
         //View not exists on target database, then generate the script to create view
         actionLabel = 'CREATE';
 
-        sqlScript.push(sql.generateCreateViewScript(view, sourceViews[view]));
+        sqlScript.push(sql.generateCreateViewScript(view, sourceObj));
         sqlScript.push(
           sql.generateChangeCommentScript(
+            sourceObj.id,
             objectType.VIEW,
             view,
-            sourceViews[view].comment
+            sourceObj.comment
           )
         );
       }
@@ -1026,14 +1181,14 @@ export class CompareApi {
 
     if (config.compareOptions.schemaCompare.dropMissingView)
       for (let view in targetViews) {
-        //Get missing views
-        let sqlScript: string[] = [];
-
-        if (!sourceViews[view])
-          sqlScript.push(sql.generateDropViewScript(view));
+        if (sourceViews[view]) {
+          continue;
+        }
 
         finalizedScript.push(
-          ...this.finalizeScript(`DROP VIEW ${view}`, sqlScript)
+          ...this.finalizeScript(`DROP VIEW ${view}`, [
+            sql.generateDropViewScript(view),
+          ])
         );
       }
 
@@ -1047,53 +1202,46 @@ export class CompareApi {
     droppedIndexes: string[],
     config: Config
   ) {
-    let finalizedScript: string[] = [];
+    let finalizedScript: Sql[] = [];
 
     for (let view in sourceMaterializedViews) {
+      const sourceObj = sourceMaterializedViews[view];
+      const targetObj = targetMaterializedViews[view];
       //Get new or changed materialized views
-      let sqlScript: string[] = [];
+      let sqlScript: Sql[] = [];
       let actionLabel = '';
 
-      if (targetMaterializedViews[view]) {
+      if (targetObj) {
         //Materialized view exists on both database, then compare materialized view schema
         actionLabel = 'ALTER';
 
-        let sourceViewDefinition = sourceMaterializedViews[
-          view
-        ].definition.replace(/\r/g, '');
-        let targetViewDefinition = targetMaterializedViews[
-          view
-        ].definition.replace(/\r/g, '');
+        let sourceViewDefinition = sourceObj.definition.replace(/\r/g, '');
+        let targetViewDefinition = targetObj.definition.replace(/\r/g, '');
         if (sourceViewDefinition != targetViewDefinition) {
           if (!droppedViews.includes(view))
             sqlScript.push(sql.generateDropMaterializedViewScript(view));
           sqlScript.push(
-            sql.generateCreateMaterializedViewScript(
-              view,
-              sourceMaterializedViews[view]
-            )
+            sql.generateCreateMaterializedViewScript(view, sourceObj)
           );
           sqlScript.push(
             sql.generateChangeCommentScript(
+              sourceObj.id,
               objectType.MATERIALIZED_VIEW,
               view,
-              sourceMaterializedViews[view].comment
+              sourceObj.comment
             )
           );
         } else {
           if (droppedViews.includes(view))
             //It will recreate a dropped materialized view because changes happens on involved columns
             sqlScript.push(
-              sql.generateCreateMaterializedViewScript(
-                view,
-                sourceMaterializedViews[view]
-              )
+              sql.generateCreateMaterializedViewScript(view, sourceObj)
             );
 
           sqlScript.push(
             ...this.compareTableIndexes(
-              sourceMaterializedViews[view].indexes,
-              targetMaterializedViews[view].indexes,
+              sourceObj.indexes,
+              targetObj.indexes,
               droppedIndexes
             )
           );
@@ -1101,32 +1249,24 @@ export class CompareApi {
           sqlScript.push(
             ...this.compareTablePrivileges(
               view,
-              sourceMaterializedViews[view].privileges,
-              targetMaterializedViews[view].privileges,
+              sourceObj.privileges,
+              targetObj.privileges,
               config
             )
           );
 
-          if (
-            sourceMaterializedViews[view].owner !=
-            targetMaterializedViews[view].owner
-          )
+          if (sourceObj.owner != targetObj.owner)
             sqlScript.push(
-              sql.generateChangeTableOwnerScript(
-                view,
-                sourceMaterializedViews[view].owner
-              )
+              sql.generateChangeTableOwnerScript(view, sourceObj.owner)
             );
 
-          if (
-            sourceMaterializedViews[view].comment !=
-            targetMaterializedViews[view].comment
-          )
+          if (sourceObj.comment != targetObj.comment)
             sqlScript.push(
               sql.generateChangeCommentScript(
+                sourceObj.id,
                 objectType.MATERIALIZED_VIEW,
                 view,
-                sourceMaterializedViews[view].comment
+                sourceObj.comment
               )
             );
         }
@@ -1135,16 +1275,14 @@ export class CompareApi {
         actionLabel = 'CREATE';
 
         sqlScript.push(
-          sql.generateCreateMaterializedViewScript(
-            view,
-            sourceMaterializedViews[view]
-          )
+          sql.generateCreateMaterializedViewScript(view, sourceObj)
         );
         sqlScript.push(
           sql.generateChangeCommentScript(
+            sourceObj.id,
             objectType.MATERIALIZED_VIEW,
             view,
-            sourceMaterializedViews[view].comment
+            sourceObj.comment
           )
         );
       }
@@ -1159,13 +1297,13 @@ export class CompareApi {
 
     if (config.compareOptions.schemaCompare.dropMissingView)
       for (let view in targetMaterializedViews) {
-        let sqlScript: string[] = [];
-
-        if (!sourceMaterializedViews[view])
-          sqlScript.push(sql.generateDropMaterializedViewScript(view));
-
+        if (sourceMaterializedViews[view]) {
+          continue;
+        }
         finalizedScript.push(
-          ...this.finalizeScript(`DROP MATERIALIZED VIEW ${view}`, sqlScript)
+          ...this.finalizeScript(`DROP MATERIALIZED VIEW ${view}`, [
+            sql.generateDropMaterializedViewScript(view),
+          ])
         );
       }
 
@@ -1177,80 +1315,73 @@ export class CompareApi {
     targetFunctions: Record<string, Record<string, FunctionDefinition>>,
     config: Config
   ) {
-    let finalizedScript: string[] = [];
+    let finalizedScript: Sql[] = [];
 
     for (let procedure in sourceFunctions) {
       for (const procedureArgs in sourceFunctions[procedure]) {
-        let sqlScript: string[] = [];
+        let sqlScript: Sql[] = [];
         let actionLabel = '';
-        const procedureType =
-          sourceFunctions[procedure][procedureArgs].type === 'f'
-            ? objectType.FUNCTION
-            : objectType.PROCEDURE;
-
-        if (
+        const sourceObj = sourceFunctions[procedure][procedureArgs];
+        const targetObj =
           targetFunctions[procedure] &&
-          targetFunctions[procedure][procedureArgs]
-        ) {
+          targetFunctions[procedure][procedureArgs];
+        const procedureType =
+          sourceObj.type === 'f' ? objectType.FUNCTION : objectType.PROCEDURE;
+
+        if (targetObj) {
           //Procedure exists on both database, then compare procedure definition
           actionLabel = 'ALTER';
 
           //TODO: Is correct that if definition is different automatically GRANTS and OWNER will not be updated also?
           //TODO: Better to match only "visible" char in order to avoid special invisible like \t, spaces, etc;
           //      the problem is that a SQL STRING can contains special char as a fix from previous function version
-          let sourceFunctionDefinition = sourceFunctions[procedure][
-            procedureArgs
-          ].definition.replace(/\r/g, '');
-          let targetFunctionDefinition = targetFunctions[procedure][
-            procedureArgs
-          ].definition.replace(/\r/g, '');
-          if (sourceFunctionDefinition != targetFunctionDefinition) {
-            sqlScript.push(
-              sql.generateChangeProcedureScript(
-                procedure,
-                sourceFunctions[procedure][procedureArgs]
-              )
-            );
+          const sourceFunctionDefinition = sourceObj.definition.replace(
+            /\r/g,
+            ''
+          );
+          const targetFunctionDefinition = targetObj.definition.replace(
+            /\r/g,
+            ''
+          );
+          if (sourceFunctionDefinition !== targetFunctionDefinition) {
+            if (sourceObj.argTypes !== targetObj.argTypes) {
+              sqlScript.push(sql.generateDropProcedureScript(sourceObj));
+            }
+            sqlScript.push(sql.generateCreateProcedureScript(sourceObj));
             sqlScript.push(
               sql.generateChangeCommentScript(
+                sourceObj.id,
                 procedureType,
                 `${procedure}(${procedureArgs})`,
-                sourceFunctions[procedure][procedureArgs].comment
+                sourceObj.comment
               )
             );
           } else {
             sqlScript.push(
               ...this.compareProcedurePrivileges(
-                procedure,
-                procedureArgs,
-                sourceFunctions[procedure][procedureArgs].type,
-                sourceFunctions[procedure][procedureArgs].privileges,
-                targetFunctions[procedure][procedureArgs].privileges
+                sourceObj,
+                sourceObj.privileges,
+                targetObj.privileges
               )
             );
 
-            if (
-              sourceFunctions[procedure][procedureArgs].owner !=
-              targetFunctions[procedure][procedureArgs].owner
-            )
+            if (sourceObj.owner != targetObj.owner)
               sqlScript.push(
                 sql.generateChangeProcedureOwnerScript(
                   procedure,
                   procedureArgs,
-                  sourceFunctions[procedure][procedureArgs].owner,
-                  sourceFunctions[procedure][procedureArgs].type
+                  sourceObj.owner,
+                  sourceObj.type
                 )
               );
 
-            if (
-              sourceFunctions[procedure][procedureArgs].comment !=
-              sourceFunctions[procedure][procedureArgs].comment
-            )
+            if (sourceObj.comment != sourceObj.comment)
               sqlScript.push(
                 sql.generateChangeCommentScript(
+                  sourceObj.id,
                   procedureType,
                   `${procedure}(${procedureArgs})`,
-                  sourceFunctions[procedure][procedureArgs].comment
+                  sourceObj.comment
                 )
               );
           }
@@ -1258,17 +1389,13 @@ export class CompareApi {
           //Procedure not exists on target database, then generate the script to create procedure
           actionLabel = 'CREATE';
 
-          sqlScript.push(
-            sql.generateCreateProcedureScript(
-              procedure,
-              sourceFunctions[procedure][procedureArgs]
-            )
-          );
+          sqlScript.push(sql.generateCreateProcedureScript(sourceObj));
           sqlScript.push(
             sql.generateChangeCommentScript(
+              sourceObj.id,
               procedureType,
               `${procedure}(${procedureArgs})`,
-              sourceFunctions[procedure][procedureArgs].comment
+              sourceObj.comment
             )
           );
         }
@@ -1285,20 +1412,20 @@ export class CompareApi {
     if (config.compareOptions.schemaCompare.dropMissingFunction)
       for (let procedure in targetFunctions) {
         for (const procedureArgs in targetFunctions[procedure]) {
-          let sqlScript: string[] = [];
-
           if (
-            !sourceFunctions[procedure] ||
-            !sourceFunctions[procedure][procedureArgs]
-          )
-            sqlScript.push(
-              sql.generateDropProcedureScript(procedure, procedureArgs)
-            );
-
+            sourceFunctions[procedure] &&
+            sourceFunctions[procedure][procedureArgs]
+          ) {
+            continue;
+          }
           finalizedScript.push(
             ...this.finalizeScript(
               `DROP FUNCTION ${procedure}(${procedureArgs})`,
-              sqlScript
+              [
+                sql.generateDropProcedureScript(
+                  targetFunctions[procedure][procedureArgs]
+                ),
+              ]
             )
           );
         }
@@ -1308,40 +1435,34 @@ export class CompareApi {
   }
 
   static compareAggregates(
-    sourceAggregates: Record<string, AggregateDefinition>,
-    targetAggregates: Record<string, AggregateDefinition>,
+    sourceAggregates: Record<string, Record<string, AggregateDefinition>>,
+    targetAggregates: Record<string, Record<string, AggregateDefinition>>,
     config: Config
   ) {
-    let finalizedScript: string[] = [];
+    let finalizedScript: Sql[] = [];
 
     for (let aggregate in sourceAggregates) {
       for (const aggregateArgs in sourceAggregates[aggregate]) {
-        let sqlScript: string[] = [];
+        const sourceObj = sourceAggregates[aggregate][aggregateArgs];
+        const targetObj =
+          targetAggregates[aggregate] &&
+          targetAggregates[aggregate][aggregateArgs];
+        let sqlScript: Sql[] = [];
         let actionLabel = '';
 
-        if (
-          targetAggregates[aggregate] &&
-          targetAggregates[aggregate][aggregateArgs]
-        ) {
+        if (targetObj) {
           //Aggregate exists on both database, then compare procedure definition
           actionLabel = 'ALTER';
 
           //TODO: Is correct that if definition is different automatically GRANTS and OWNER will not be updated also?
-          if (
-            sourceAggregates[aggregate][aggregateArgs].definition !=
-            targetAggregates[aggregate][aggregateArgs].definition
-          ) {
-            sqlScript.push(
-              sql.generateChangeAggregateScript(
-                aggregate,
-                sourceAggregates[aggregate][aggregateArgs]
-              )
-            );
+          if (sourceObj.definition != targetObj.definition) {
+            sqlScript.push(sql.generateChangeAggregateScript(sourceObj));
             sqlScript.push(
               sql.generateChangeCommentScript(
+                sourceObj.id,
                 objectType.AGGREGATE,
                 `${aggregate}(${aggregateArgs})`,
-                sourceAggregates[aggregate][aggregateArgs].comment
+                sourceObj.comment
               )
             );
           } else {
@@ -1351,32 +1472,32 @@ export class CompareApi {
                 aggregate,
                 aggregateArgs,
                 sourceFunctions[procedure][procedureArgs].type,
-                sourceAggregates[aggregate][aggregateArgs].privileges,
-                targetAggregates[aggregate][aggregateArgs].privileges,
+                sourceObj.privileges,
+                targetObj.privileges,
               ),
             );
 
             if (
-              sourceAggregates[aggregate][aggregateArgs].owner !=
-              targetAggregates[aggregate][aggregateArgs].owner
+              sourceObj.owner !=
+              targetObj.owner
             )
               sqlScript.push(
                 sql.generateChangeAggregateOwnerScript(
                   aggregate,
                   aggregateArgs,
-                  sourceAggregates[aggregate][aggregateArgs].owner,
+                  sourceObj.owner,
                 ),
               );
 
             if (
-              sourceAggregates[aggregate][aggregateArgs].comment !=
-              targetAggregates[aggregate][aggregateArgs].comment
+              sourceObj.comment !=
+              targetObj.comment
             )
               sqlScript.push(
                 sql.generateChangeCommentScript(
                   objectType.AGGREGATE,
                   `${aggregate}(${aggregateArgs})`,
-                  sourceAggregates[aggregate][aggregateArgs].comment,
+                  sourceObj.comment,
                 ),
               );*/
           }
@@ -1384,17 +1505,13 @@ export class CompareApi {
           //Aggregate not exists on target database, then generate the script to create aggregate
           actionLabel = 'CREATE';
 
-          sqlScript.push(
-            sql.generateCreateAggregateScript(
-              aggregate,
-              sourceAggregates[aggregate][aggregateArgs]
-            )
-          );
+          sqlScript.push(sql.generateCreateAggregateScript(sourceObj));
           sqlScript.push(
             sql.generateChangeCommentScript(
+              sourceObj.id,
               objectType.FUNCTION,
               `${aggregate}(${aggregateArgs})`,
-              sourceAggregates[aggregate][aggregateArgs].comment
+              sourceObj.comment
             )
           );
         }
@@ -1411,7 +1528,7 @@ export class CompareApi {
     if (config.compareOptions.schemaCompare.dropMissingAggregate)
       for (let aggregate in targetAggregates) {
         for (const aggregateArgs in targetAggregates[aggregate]) {
-          let sqlScript: string[] = [];
+          let sqlScript: Sql[] = [];
 
           if (
             !sourceAggregates[aggregate] ||
@@ -1434,46 +1551,29 @@ export class CompareApi {
   }
 
   static compareProcedurePrivileges(
-    procedure: string,
-    argTypes: string,
-    type: 'f' | 'p',
+    schema: FunctionDefinition,
     sourceProcedurePrivileges: Record<string, FunctionPrivileges>,
     targetProcedurePrivileges: Record<string, FunctionPrivileges>
   ) {
-    let sqlScript: string[] = [];
+    let sqlScript: Sql[] = [];
 
     for (let role in sourceProcedurePrivileges) {
+      const sourceObj = sourceProcedurePrivileges[role];
+      const targetObj = targetProcedurePrivileges[role];
       //Get new or changed role privileges
-      if (targetProcedurePrivileges[role]) {
+      if (targetObj) {
         //Procedure privileges for role exists on both database, then compare privileges
-        let changes: Changes = {};
-        if (
-          sourceProcedurePrivileges[role].execute !=
-          targetProcedurePrivileges[role].execute
-        )
-          changes.execute = sourceProcedurePrivileges[role].execute;
+        let changes: ColumnChanges = {};
+        if (sourceObj.execute != targetObj.execute)
+          changes.execute = sourceObj.execute;
 
         if (Object.keys(changes).length > 0)
           sqlScript.push(
-            sql.generateChangesProcedureRoleGrantsScript(
-              procedure,
-              argTypes,
-              role,
-              changes,
-              type
-            )
+            sql.generateChangesProcedureRoleGrantsScript(schema, role, changes)
           );
       } else {
         //Procedure grants for role not exists on target database, then generate script to add role privileges
-        sqlScript.push(
-          sql.generateProcedureRoleGrantsScript(
-            procedure,
-            argTypes,
-            role,
-            sourceProcedurePrivileges[role],
-            type
-          )
-        );
+        sqlScript.push(sql.generateProcedureRoleGrantsScript(schema, role));
       }
     }
 
@@ -1481,58 +1581,60 @@ export class CompareApi {
   }
 
   static compareSequences(
+    config: Config,
     sourceSequences: Record<string, Sequence>,
     targetSequences: Record<string, Sequence>
   ) {
-    let finalizedScript: string[] = [];
-
-    for (let sequence in sourceSequences) {
-      let sqlScript: string[] = [];
-      let actionLabel = '';
-      let targetSequence =
+    const full = config.compareOptions.schemaCompare.sequence !== false;
+    const finalizedScript: Sql[] = [];
+    for (const sequence in sourceSequences) {
+      const sqlScript: Sql[] = [];
+      const sourceObj = sourceSequences[sequence];
+      const targetSequence =
         this.findRenamedSequenceOwnedByTargetTableColumn(
           sequence,
-          sourceSequences[sequence].ownedBy,
+          sourceObj.ownedBy,
           targetSequences
-        ) || sequence;
+        ) ?? sequence;
+      const targetObj = targetSequences[targetSequence];
+      let actionLabel = '';
 
-      if (targetSequences[targetSequence]) {
+      if (targetObj) {
         //Sequence exists on both database, then compare sequence definition
         actionLabel = 'ALTER';
 
-        if (sequence != targetSequence)
+        if (sequence !== targetSequence)
           sqlScript.push(
             sql.generateRenameSequenceScript(
               targetSequence,
-              `"${sourceSequences[sequence].name}"`
+              `"${sourceObj.name}"`
             )
           );
 
         sqlScript.push(
           ...this.compareSequenceDefinition(
+            config,
             sequence,
-            sourceSequences[sequence],
-            targetSequences[targetSequence]
+            sourceObj,
+            targetObj
           )
         );
 
         sqlScript.push(
           ...this.compareSequencePrivileges(
             sequence,
-            sourceSequences[sequence].privileges,
-            targetSequences[targetSequence].privileges
+            sourceObj.privileges,
+            targetObj.privileges
           )
         );
 
-        if (
-          sourceSequences[sequence].comment !=
-          targetSequences[targetSequence].comment
-        )
+        if (sourceObj.comment != targetObj.comment)
           sqlScript.push(
             sql.generateChangeCommentScript(
+              sourceObj.id,
               objectType.SEQUENCE,
               sequence,
-              sourceSequences[sequence].comment
+              sourceObj.comment
             )
           );
       } else {
@@ -1540,13 +1642,17 @@ export class CompareApi {
         actionLabel = 'CREATE';
 
         sqlScript.push(
-          sql.generateCreateSequenceScript(sequence, sourceSequences[sequence])
+          sql.generateCreateSequenceScript(
+            sourceObj,
+            config.compareOptions.mapRole(sourceObj.owner)
+          )
         );
         sqlScript.push(
           sql.generateChangeCommentScript(
+            sourceObj.id,
             objectType.SEQUENCE,
             sequence,
-            sourceSequences[sequence].comment
+            sourceObj.comment
           )
         );
       }
@@ -1577,34 +1683,36 @@ export class CompareApi {
   }
 
   static compareSequenceDefinition(
+    config: Config,
     sequence: string,
     sourceSequenceDefinition: Sequence,
     targetSequenceDefinition: Sequence
   ) {
-    let sqlScript: string[] = [];
+    const sqlScript: Sql[] = [];
 
-    for (let property in sourceSequenceDefinition) {
-      //Get new or changed properties
-
+    for (const property in sourceSequenceDefinition) {
+      let sourceObj = sourceSequenceDefinition[property];
+      const targetObj = targetSequenceDefinition[property];
+      if (property === 'owner') {
+        sourceObj = config.compareOptions.mapRole(sourceObj);
+      }
       if (
         property == 'privileges' ||
         property == 'ownedBy' ||
         property == 'name' ||
-        property == 'comment'
-      )
-        //skip these properties from compare
+        property == 'comment' ||
+        property == 'id' ||
+        sourceObj === targetObj
+      ) {
         continue;
-
-      if (
-        sourceSequenceDefinition[property] != targetSequenceDefinition[property]
-      )
-        sqlScript.push(
-          sql.generateChangeSequencePropertyScript(
-            sequence,
-            property,
-            sourceSequenceDefinition[property]
-          )
-        );
+      }
+      sqlScript.push(
+        sql.generateChangeSequencePropertyScript(
+          sequence,
+          property as SequenceProperties,
+          sourceObj
+        )
+      );
     }
 
     return sqlScript;
@@ -1615,13 +1723,13 @@ export class CompareApi {
     sourceSequencePrivileges: SequencePrivileges,
     targetSequencePrivileges: SequencePrivileges
   ) {
-    let sqlScript: string[] = [];
+    let sqlScript: Sql[] = [];
 
     for (let role in sourceSequencePrivileges) {
       //Get new or changed role privileges
       if (targetSequencePrivileges[role]) {
         //Sequence privileges for role exists on both database, then compare privileges
-        let changes: Changes = {};
+        let changes: ColumnChanges = {};
         if (
           sourceSequencePrivileges[role].select !=
           targetSequencePrivileges[role].select
@@ -1669,7 +1777,7 @@ export class CompareApi {
     dbTargetObjects: DatabaseObjects,
     eventEmitter: EventEmitter
   ) {
-    let finalizedScript: string[] = [];
+    let finalizedScript: Sql[] = [];
     let iteratorCounter = 0;
     let progressStepSize = Math.floor(
       20 / config.compareOptions.dataCompare.tables.length
@@ -1677,14 +1785,14 @@ export class CompareApi {
 
     for (let tableDefinition of config.compareOptions.dataCompare.tables) {
       let differentRecords = 0;
-      let sqlScript: string[] = [];
+      let sqlScript: Sql[] = [];
       let fullTableName = `"${tableDefinition.tableSchema || 'public'}"."${
         tableDefinition.tableName
       }"`;
 
       if (!(await this.checkIfTableExists(sourceClient, tableDefinition))) {
         sqlScript.push(
-          `\n--ERROR: Table ${fullTableName} not found on SOURCE database for comparison!\n`
+          stmt`\n--ERROR: Table ${fullTableName} not found on SOURCE database for comparison!\n`
         );
       } else {
         let tableData: TableData = {
@@ -1721,7 +1829,9 @@ export class CompareApi {
           !(await this.checkIfTableExists(targetClient, tableDefinition))
         ) {
           sqlScript.push(
-            `\n--ERROR: Table "${tableDefinition.tableSchema || 'public'}"."${
+            stmt`\n--ERROR: Table "${
+              tableDefinition.tableSchema || 'public'
+            }"."${
               tableDefinition.tableName
             }" not found on TARGET database for comparison!\n`
           );
@@ -1875,7 +1985,7 @@ export class CompareApi {
     addedColumns: any
   ) {
     let ignoredRowHash: string[] = [];
-    let result: { sqlScript: string[]; isSequenceRebaseNeeded: boolean } = {
+    let result: { sqlScript: Sql[]; isSequenceRebaseNeeded: boolean } = {
       sqlScript: [],
       isSequenceRebaseNeeded: false,
     };
@@ -1905,7 +2015,7 @@ export class CompareApi {
       ) {
         ignoredRowHash.push(record.rowHash);
         result.sqlScript.push(
-          `\n--ERROR: Too many record found in SOURCE database for table ${fullTableName} and key fields ${JSON.stringify(
+          stmt`\n--ERROR: Too many record found in SOURCE database for table ${fullTableName} and key fields ${JSON.stringify(
             keyFieldsMap
           )} !\n`
         );
@@ -1921,7 +2031,7 @@ export class CompareApi {
       if (targetRecord.length > 1) {
         ignoredRowHash.push(record.rowHash);
         result.sqlScript.push(
-          `\n--ERROR: Too many record found in TARGET database for table ${fullTableName} and key fields ${JSON.stringify(
+          stmt`\n--ERROR: Too many record found in TARGET database for table ${fullTableName} and key fields ${JSON.stringify(
             keyFieldsMap
           )} !\n`
         );
@@ -1975,7 +2085,7 @@ export class CompareApi {
       ) {
         ignoredRowHash.push(record.rowHash);
         result.sqlScript.push(
-          `\n--ERROR: Too many record found in TARGET database for table ${fullTableName} and key fields ${JSON.stringify(
+          stmt`\n--ERROR: Too many record found in TARGET database for table ${fullTableName} and key fields ${JSON.stringify(
             keyFieldsMap
           )} !\n`
         );
@@ -2018,7 +2128,7 @@ export class CompareApi {
     addedColumns: any
   ) {
     let changes: any = {};
-    let result: { sqlScript: string[]; isSequenceRebaseNeeded: boolean } = {
+    let result: { sqlScript: Sql[]; isSequenceRebaseNeeded: boolean } = {
       sqlScript: [],
       isSequenceRebaseNeeded: false,
     };
@@ -2076,7 +2186,7 @@ export class CompareApi {
     tableDefinition: TableDefinition,
     tableData: TableData
   ) {
-    let sqlScript: string[] = [];
+    let sqlScript: Sql[] = [];
     let fullTableName = `"${tableDefinition.tableSchema || 'public'}"."${
       tableDefinition.tableName
     }"`;
@@ -2091,7 +2201,7 @@ export class CompareApi {
   }
 
   static async saveSqlScript(
-    scriptLines: string[],
+    scriptLines: Sql[],
     config: Config,
     scriptName: string,
     eventEmitter: EventEmitter
@@ -2141,8 +2251,8 @@ export class CompareApi {
         );
         file.write(`/******************${'*'.repeat(titleLength + 2)}***/\n`);
 
-        scriptLines.forEach(function (line: string) {
-          file.write(line);
+        scriptLines.forEach((line) => {
+          file.write(line.toString());
         });
 
         file.end();
@@ -2151,4 +2261,11 @@ export class CompareApi {
       }
     });
   }
+}
+
+function commentIsEqual(
+  a: string | null | undefined,
+  b: string | null | undefined
+) {
+  return a === b || (!a && !b);
 }

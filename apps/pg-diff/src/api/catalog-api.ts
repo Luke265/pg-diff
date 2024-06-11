@@ -21,6 +21,7 @@ import {
   getAggregates,
   getSequences,
   getSequencePrivileges,
+  getTablePolicies,
 } from './introspection';
 import {
   AggregateDefinition,
@@ -30,7 +31,13 @@ import {
   TableObject,
   ViewDefinition,
 } from '../models/database-objects';
+import { SqlRef } from '../stmt';
 
+const COLUMN_TYPE_MAP = {
+  int4: 'INTEGER',
+  bool: 'BOOLEAN',
+  timestamptz: 'TIMESTAMP WITH TIME ZONE',
+};
 export class CatalogApi {
   static async retrieveAllSchemas(client: ClientBase) {
     const namespaces = await getAllSchemas(client);
@@ -40,14 +47,13 @@ export class CatalogApi {
   static async retrieveSchemas(
     client: ClientBase,
     schemas: string[]
-  ): Promise<Record<string, { owner: string; comment: string | null }>> {
+  ): Promise<
+    Record<string, { id: number; owner: string; comment: string | null }>
+  > {
     const result = {};
     const namespaces = await getSchemas(client, schemas);
     for (const row of namespaces.rows) {
-      result[row.nspname] = {
-        owner: row.owner,
-        comment: row.comment,
-      };
+      result[row.nspname] = row;
     }
     return result;
   }
@@ -63,12 +69,17 @@ export class CatalogApi {
     await Promise.all(
       tables.rows.map(async (table) => {
         const fullTableName = `"${table.schemaname}"."${table.tablename}"`;
-        const def = (result[fullTableName] = {
+        const def: TableObject = (result[fullTableName] = {
+          id: table.id,
+          name: table.tablename,
+          schema: table.schemaname,
+          fullName: `"${table.tablename}"."${table.schemaname}"`,
           columns: {},
           constraints: {},
           options: {},
           indexes: {},
           privileges: {},
+          policies: {},
           owner: table.tableowner,
           comment: table.comment,
         });
@@ -83,7 +94,7 @@ export class CatalogApi {
           let columnName = `"${column.attname}"`;
           let columnIdentity: 'ALWAYS' | 'BY DEFAULT' | null = null;
           let defaultValue = column.adsrc;
-          let dataType = column.typname;
+          let dataType = COLUMN_TYPE_MAP[column.typname] ?? column.typname;
           let generatedColumn: 'STORED' | null = null;
 
           switch (column.attidentity) {
@@ -102,13 +113,22 @@ export class CatalogApi {
               generatedColumn = 'STORED';
               break;
           }
-
+          const functIdsMatch = column.adbin?.matchAll(
+            /FUNCEXPR :funcid (\d+)/g
+          );
+          const defaultFunctionIds = Array.from(functIdsMatch ?? []).map((m) =>
+            parseInt(m[1])
+          );
           def.columns[columnName] = {
+            id: column.id,
             nullable: !column.attnotnull,
             datatype: dataType,
             dataTypeID: column.typeid,
             dataTypeCategory: column.typcategory,
             default: defaultValue,
+            defaultFunctionIds,
+            defaultRef: new SqlRef(defaultValue, defaultFunctionIds),
+            functionReferences: [],
             precision: column.precision,
             scale: column.scale,
             identity: columnIdentity,
@@ -125,6 +145,8 @@ export class CatalogApi {
         constraints.rows.forEach((constraint) => {
           let constraintName = `"${constraint.conname}"`;
           def.constraints[constraintName] = {
+            id: constraint.id,
+            relid: constraint.relid,
             type: constraint.contype,
             definition: constraint.definition,
             comment: constraint.comment,
@@ -183,8 +205,10 @@ export class CatalogApi {
         );
         indexes.rows.forEach((index) => {
           def.indexes[index.indexname] = {
+            id: index.id,
             definition: index.indexdef,
             comment: index.comment,
+            name: index.indexname,
             schema: table.schemaname,
           };
         });
@@ -212,7 +236,33 @@ export class CatalogApi {
             };
           });
 
-        //TODO: Missing discovering of PARTITION
+        const policies = await getTablePolicies(
+          client,
+          table.schemaname,
+          table.tablename
+        );
+        policies.rows.forEach((row) => {
+          let using = row.policy_qual;
+          let withCheck = row.policy_with_check;
+          if (using && !using.startsWith('(')) {
+            using = `(${using})`;
+          }
+          if (withCheck && !withCheck.startsWith('(')) {
+            withCheck = `(${withCheck})`;
+          }
+          def.policies[row.polname] = {
+            id: row.id,
+            relid: row.polrelid,
+            using,
+            withCheck,
+            permissive: row.polpermissive,
+            comment: row.comment,
+            name: row.polname,
+            roles: row.role_names,
+            for: row.polcmd,
+          };
+        });
+        //TODO: Missing discovering of PARTITIONv
         //TODO: Missing discovering of TRIGGER
         //TODO: Missing discovering of GRANTS for COLUMNS
         //TODO: Missing discovering of WITH GRANT OPTION, that is used to indicate if user\role can add GRANTS to other users
@@ -242,6 +292,7 @@ export class CatalogApi {
       views.rows.map(async (view) => {
         const fullViewName = `"${view.schemaname}"."${view.viewname}"`;
         const def = (result[fullViewName] = {
+          id: view.id,
           definition: view.definition,
           owner: view.viewowner,
           privileges: {},
@@ -304,6 +355,7 @@ export class CatalogApi {
       views.rows.map(async (view) => {
         const fullViewName = `"${view.schemaname}"."${view.matviewname}"`;
         const def = (result[fullViewName] = {
+          id: view.id,
           definition: view.definition,
           indexes: {},
           owner: view.matviewowner,
@@ -370,7 +422,7 @@ export class CatalogApi {
 
   static async retrieveFunctions(client: ClientBase, config: Config) {
     const result: Record<string, Record<string, FunctionDefinition>> = {};
-
+    const list: FunctionDefinition[] = [];
     const procedures = await getFunctions(
       client,
       config.compareOptions.schemaCompare.namespaces,
@@ -378,22 +430,29 @@ export class CatalogApi {
     );
 
     await Promise.all(
-      procedures.rows.map(async (procedure) => {
-        const fullProcedureName = `"${procedure.nspname}"."${procedure.proname}"`;
+      procedures.rows.map(async (row) => {
+        const fullProcedureName = `"${row.nspname}"."${row.proname}"`;
         const map = (result[fullProcedureName] ??= {});
-        const def = (map[procedure.argtypes] = {
-          definition: procedure.definition,
-          owner: procedure.owner,
-          argTypes: procedure.argtypes,
+        const def = (map[row.argtypes] = {
+          id: row.id,
+          definition: row.definition,
+          owner: row.owner,
+          prorettype: row.prorettype,
+          fullName: fullProcedureName,
+          argTypes: row.argtypes,
           privileges: {},
-          comment: procedure.comment,
-          type: procedure.prokind,
+          comment: row.comment,
+          fReferences: extractFunctionCalls(row.definition),
+          fReferenceIds: [],
+          type: row.prokind,
         });
+
+        list.push(def);
         const privileges = await getFunctionPrivileges(
           client,
-          procedure.nspname,
-          procedure.proname,
-          procedure.argtypes
+          row.nspname,
+          row.proname,
+          row.argtypes
         );
 
         privileges.rows
@@ -409,8 +468,17 @@ export class CatalogApi {
           });
       })
     );
+    for (const f of list) {
+      if (f.fReferences.length === 0) {
+        continue;
+      }
+      /*f.fReferenceIds = f.fReferences
+        .filter((ref) => result[ref])
+        .map((ref) => Object.values(result[ref]).map((f) => f.id))
+        .flat();*/
+    }
 
-    return result;
+    return { map: result, list };
   }
 
   static async retrieveAggregates(client: ClientBase, config: Config) {
@@ -425,8 +493,14 @@ export class CatalogApi {
         const fullAggregateName = `"${aggregate.nspname}"."${aggregate.proname}"`;
         const map = (result[fullAggregateName] ??= {});
         const def = (map[aggregate.argtypes] = {
+          id: aggregate.id,
           definition: aggregate.definition,
+          prorettype: aggregate.prorettype,
           owner: aggregate.owner,
+          fullName: fullAggregateName,
+          fReferences: [],
+          fReferenceIds: [],
+          type: 'f',
           argTypes: aggregate.argtypes,
           privileges: {},
           comment: aggregate.comment,
@@ -469,6 +543,7 @@ export class CatalogApi {
       sequences.rows.map(async (sequence) => {
         const fullSequenceName = `"${sequence.seq_nspname}"."${sequence.seq_name}"`;
         const def = (result[fullSequenceName] = {
+          id: sequence.id,
           owner: sequence.owner,
           startValue: sequence.start_value,
           minValue: sequence.minimum_value,
@@ -477,6 +552,7 @@ export class CatalogApi {
           cacheSize: sequence.cache_size,
           isCycle: sequence.cycle_option,
           name: sequence.seq_name,
+          schema: sequence.seq_nspname,
           ownedBy:
             sequence.ownedby_table && sequence.ownedby_column
               ? `${sequence.ownedby_table}.${sequence.ownedby_column}`
@@ -513,4 +589,27 @@ export class CatalogApi {
     );
     return result;
   }
+}
+
+function extractFunctionCalls(sqlFunctionBody: string): string[] {
+  sqlFunctionBody = sqlFunctionBody.substring(
+    sqlFunctionBody.indexOf('RETURNS')
+  );
+  // Define a regex to match function calls
+  const functionCallRegex = /(\w+(\.\w+)+)\s*\(/g;
+  let functionCalls = [];
+  let match;
+
+  // Use the regex to find all function calls in the SQL function body
+  while ((match = functionCallRegex.exec(sqlFunctionBody)) !== null) {
+    // match[1] contains the function name (e.g., "app_hidden.on_order_paid")
+    functionCalls.push(
+      match[1]
+        .split('.')
+        .map((v) => `"${v}"`)
+        .join('.')
+    );
+  }
+
+  return functionCalls;
 }

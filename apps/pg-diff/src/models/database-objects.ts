@@ -1,6 +1,13 @@
+import { SqlRef } from '../stmt';
+
 export interface FunctionDefinition {
+  id: number;
   argTypes: string;
+  fullName: string;
+  prorettype: number;
   comment: string | null;
+  fReferences: string[];
+  fReferenceIds: number[];
   definition: string;
   owner: string;
   privileges: Record<string, FunctionPrivileges>;
@@ -18,11 +25,14 @@ export interface Privileges {
 export interface SequencePrivileges {
   usage?: boolean;
   select?: boolean;
+  update?: boolean;
 }
 export interface FunctionPrivileges {
   execute: string;
 }
 export interface ConstraintDefinition {
+  id: number;
+  relid: number;
   type: string;
   definition: string;
   comment: string | null;
@@ -30,9 +40,11 @@ export interface ConstraintDefinition {
   foreign_table: string | null;
 }
 export interface IndexDefinition {
+  id: string;
   definition: string;
   comment: string | null;
   schema: string;
+  name: string;
 }
 export interface ViewDependency {
   schemaName: string;
@@ -40,6 +52,7 @@ export interface ViewDependency {
   columnName: string;
 }
 export interface ViewDefinition {
+  id: number;
   definition: string;
   owner: string;
   privileges: Record<string, Privileges>;
@@ -47,6 +60,7 @@ export interface ViewDefinition {
   comment: string;
 }
 export interface Schema {
+  id: number;
   owner: string;
   comment: string | null;
 }
@@ -84,25 +98,45 @@ export type ColumnType =
   | '_int4'
   | 'int8';
 export interface Column {
+  id: string;
   nullable: boolean;
   datatype: ColumnType | string;
   dataTypeID: number;
   dataTypeCategory: DataTypeCategory;
   default: string | null;
+  defaultFunctionIds: number[];
+  functionReferences: FunctionDefinition[];
   precision: number | null;
   scale: number | null;
   identity: string | null;
+  defaultRef: SqlRef;
   comment: string | null;
   generatedColumn: string | null;
 }
 export interface TableOptions {
   withOids?: string;
 }
+export interface Policy {
+  id: number;
+  relid: number;
+  permissive: boolean;
+  for: '*' | 'w' | 'r' | 'a' | 'd';
+  name: string;
+  comment: string | null;
+  using: string | null;
+  withCheck: string | null;
+  roles: string[];
+}
 export interface TableObject {
+  id: number;
+  schema: string;
+  name: string;
+  fullName: string;
   columns: Record<string, Column>;
   constraints: Record<string, ConstraintDefinition>;
   options: TableOptions;
   indexes: Record<string, IndexDefinition>;
+  policies: Record<string, Policy>;
   privileges: Record<string, Privileges>;
   owner: string;
   comment: string | null;
@@ -110,8 +144,21 @@ export interface TableObject {
 export interface MaterializedViewDefinition extends ViewDefinition {
   indexes: Record<string, IndexDefinition>;
 }
-export interface AggregateDefinition {}
+export interface AggregateDefinition {
+  id: number;
+  definition: string;
+  fullName: string;
+  prorettype: number;
+  type: 'f';
+  owner: string;
+  fReferences: string[];
+  fReferenceIds: number[];
+  argTypes: string;
+  privileges: Record<string, FunctionPrivileges>;
+  comment: string | null;
+}
 export interface Sequence {
+  id: number;
   owner: string;
   startValue: string;
   minValue: string;
@@ -120,6 +167,7 @@ export interface Sequence {
   cacheSize: string;
   isCycle: boolean;
   name: string;
+  schema: string;
   ownedBy: null | string;
   privileges: Record<string, SequencePrivileges>;
   comment: null | string;
@@ -129,7 +177,8 @@ export interface DatabaseObjects {
   tables: Record<string, TableObject>;
   views: Record<string, ViewDefinition>;
   materializedViews: Record<string, MaterializedViewDefinition>;
-  functions: Record<string, Record<string, FunctionDefinition>>;
-  aggregates: Record<string, AggregateDefinition>;
+  functionMap: Record<string, Record<string, FunctionDefinition>>;
+  functions: FunctionDefinition[];
+  aggregates: Record<string, Record<string, AggregateDefinition>>;
   sequences: Record<string, Sequence>;
 }
