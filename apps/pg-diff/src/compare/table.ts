@@ -13,7 +13,26 @@ import {
 } from '../catalog/database-objects';
 import { Sql, stmt } from '../stmt';
 import { commentIsEqual, ColumnChanges } from './utils';
-import * as sql from '../sql-script-generator';
+import {
+  generateAddTableColumnScript,
+  generateDropTableColumnScript,
+  generateChangeTableColumnScript,
+} from './sql/column';
+import { generateDropIndexScript } from './sql/index-db';
+import { generateDropMaterializedViewScript } from './sql/materialized-view';
+import { generateChangeCommentScript } from './sql/misc';
+import { dropPolicy, createPolicy } from './sql/policy';
+import {
+  generateChangeTableOwnerScript,
+  generateCreateTableScript,
+  generateDropTableScript,
+  generateChangeTableOptionsScript,
+  generateDropTableConstraintScript,
+  generateAddTableConstraintScript,
+  generateChangesTableRoleGrantsScript,
+  generateTableRoleGrantsScript,
+} from './sql/table';
+import { generateDropViewScript } from './sql/view';
 
 export function compareTables(
   sourceTables: Record<string, TableObject>,
@@ -83,10 +102,10 @@ export function compareTables(
 
       const owner = config.compareOptions.mapRole(sourceObj.owner);
       if (owner != targetObj.owner)
-        lines.push(sql.generateChangeTableOwnerScript(sourceTable, owner));
+        lines.push(generateChangeTableOwnerScript(sourceTable, owner));
       if (!commentIsEqual(sourceObj.comment, targetObj?.comment)) {
         lines.push(
-          sql.generateChangeCommentScript(
+          generateChangeCommentScript(
             sourceObj.id,
             objectType.TABLE,
             sourceTable,
@@ -97,10 +116,10 @@ export function compareTables(
     } else {
       //Table not exists on target database, then generate the script to create table
       addedTables.push(sourceTable);
-      lines.push(sql.generateCreateTableScript(sourceTable, sourceObj));
+      lines.push(generateCreateTableScript(sourceTable, sourceObj));
       if (sourceObj.comment) {
         lines.push(
-          sql.generateChangeCommentScript(
+          generateChangeCommentScript(
             sourceObj.id,
             objectType.TABLE,
             sourceTable,
@@ -118,7 +137,7 @@ export function compareTables(
 
     for (let table in dbTargetObjects.tables) {
       if (!sourceTables[table as any] && table != migrationFullTableName)
-        lines.push(sql.generateDropTableScript(table));
+        lines.push(generateDropTableScript(table));
     }
   }
 
@@ -133,7 +152,7 @@ function compareTableOptions(
   if (sourceTableOptions.withOids === targetTableOptions.withOids) {
     return [];
   }
-  return [sql.generateChangeTableOptionsScript(tableName, sourceTableOptions)];
+  return [generateChangeTableOptionsScript(tableName, sourceTableOptions)];
 }
 
 function compareTableColumns(
@@ -165,10 +184,10 @@ function compareTableColumns(
       );
     } else {
       //Table column not exists on target database, then generate script to add column
-      lines.push(sql.generateAddTableColumnScript(tableName, sourceColumnDef));
+      lines.push(generateAddTableColumnScript(tableName, sourceColumnDef));
       if (sourceColumnDef.comment) {
         lines.push(
-          sql.generateChangeCommentScript(
+          generateChangeCommentScript(
             sourceColumnDef.id,
             objectType.COLUMN,
             `${tableName}.${sourceTableColumn}`,
@@ -185,7 +204,7 @@ function compareTableColumns(
   for (const targetColumn in targetTable.columns) {
     if (!sourceTableColumns[targetColumn])
       //Table column not exists on source, then generate script to drop column
-      lines.push(sql.generateDropTableColumnScript(tableName, targetColumn));
+      lines.push(generateDropTableColumnScript(tableName, targetColumn));
   }
 
   return lines;
@@ -238,12 +257,8 @@ function compareTableColumn(
       sourceTableColumn.default != targetTableColumn.default)
   ) {
     changes = {};
-    lines.push(
-      sql.generateDropTableColumnScript(table.fullName, columnName, true)
-    );
-    lines.push(
-      sql.generateAddTableColumnScript(table.fullName, sourceTableColumn)
-    );
+    lines.push(generateDropTableColumnScript(table.fullName, columnName, true));
+    lines.push(generateAddTableColumnScript(table.fullName, sourceTableColumn));
   }
 
   if (Object.keys(changes).length > 0) {
@@ -269,7 +284,7 @@ function compareTableColumn(
           constraintDefinition.includes(`${columnName}`, searchStartingIndex)
         ) {
           sqlScript.push(
-            sql.generateDropTableConstraintScript(table, targetObj)
+            generateDropTableConstraintScript(table, targetObj)
           );
           droppedConstraints.push(constraint);
         }
@@ -285,7 +300,7 @@ function compareTableColumn(
         indexDefinition.includes(`${rawColumnName})`, serachStartingIndex) ||
         indexDefinition.includes(`${columnName}`, serachStartingIndex)
       ) {
-        lines.push(sql.generateDropIndexScript(targetTable.indexes[index]));
+        lines.push(generateDropIndexScript(targetTable.indexes[index]));
         droppedIndexes.push(index);
       }
     }
@@ -298,7 +313,7 @@ function compareTableColumn(
           fullDependencyName == table.fullName &&
           dependency.columnName == columnName
         ) {
-          lines.push(sql.generateDropViewScript(view));
+          lines.push(generateDropViewScript(view));
           droppedViews.push(view);
         }
       });
@@ -313,7 +328,7 @@ function compareTableColumn(
             fullDependencyName == table.fullName &&
             dependency.columnName == columnName
           ) {
-            lines.push(sql.generateDropMaterializedViewScript(view));
+            lines.push(generateDropMaterializedViewScript(view));
             droppedViews.push(view);
           }
         }
@@ -321,13 +336,13 @@ function compareTableColumn(
     }
 
     lines.push(
-      sql.generateChangeTableColumnScript(table.fullName, columnName, changes)
+      generateChangeTableColumnScript(table.fullName, columnName, changes)
     );
   }
 
   if (sourceTableColumn.comment != targetTableColumn.comment)
     lines.push(
-      sql.generateChangeCommentScript(
+      generateChangeCommentScript(
         sourceTableColumn.id,
         objectType.COLUMN,
         `${table.fullName}.${columnName}`,
@@ -353,14 +368,14 @@ function compareTableConstraints(
       //Table constraint exists on both database, then compare column schema
       if (sourceObj.definition !== targetObj.definition) {
         if (!droppedConstraints.includes(constraint)) {
-          lines.push(sql.generateDropTableConstraintScript(table, sourceObj));
+          lines.push(generateDropTableConstraintScript(table, sourceObj));
         }
         lines.push(
-          sql.generateAddTableConstraintScript(table, constraint, sourceObj)
+          generateAddTableConstraintScript(table, constraint, sourceObj)
         );
         if (sourceObj.comment) {
           lines.push(
-            sql.generateChangeCommentScript(
+            generateChangeCommentScript(
               sourceObj.id,
               objectType.CONSTRAINT,
               constraint,
@@ -373,11 +388,11 @@ function compareTableConstraints(
         if (droppedConstraints.includes(constraint)) {
           //It will recreate a dropped constraints because changes happens on involved columns
           lines.push(
-            sql.generateAddTableConstraintScript(table, constraint, sourceObj)
+            generateAddTableConstraintScript(table, constraint, sourceObj)
           );
           if (sourceObj.comment) {
             lines.push(
-              sql.generateChangeCommentScript(
+              generateChangeCommentScript(
                 sourceObj.id,
                 objectType.CONSTRAINT,
                 constraint,
@@ -389,7 +404,7 @@ function compareTableConstraints(
         } else {
           if (!commentIsEqual(sourceObj.comment, targetObj.comment)) {
             lines.push(
-              sql.generateChangeCommentScript(
+              generateChangeCommentScript(
                 sourceObj.id,
                 objectType.CONSTRAINT,
                 constraint,
@@ -403,11 +418,11 @@ function compareTableConstraints(
     } else {
       //Table constraint not exists on target database, then generate script to add constraint
       lines.push(
-        sql.generateAddTableConstraintScript(table, constraint, sourceObj)
+        generateAddTableConstraintScript(table, constraint, sourceObj)
       );
       if (sourceObj.comment) {
         lines.push(
-          sql.generateChangeCommentScript(
+          generateChangeCommentScript(
             sourceObj.id,
             objectType.CONSTRAINT,
             constraint,
@@ -427,7 +442,7 @@ function compareTableConstraints(
     )
       //Table constraint not exists on source, then generate script to drop constraint
       lines.push(
-        sql.generateDropTableConstraintScript(
+        generateDropTableConstraintScript(
           table,
           targetTableConstraints[constraint]
         )
@@ -452,11 +467,11 @@ export function compareTableIndexes(
       //Table index exists on both database, then compare index definition
       if (sourceObj.definition != targetObj.definition) {
         if (!droppedIndexes.includes(index)) {
-          lines.push(sql.generateDropIndexScript(sourceObj));
+          lines.push(generateDropIndexScript(sourceObj));
         }
         lines.push(stmt`${sourceObj.definition};`);
         lines.push(
-          sql.generateChangeCommentScript(
+          generateChangeCommentScript(
             sourceObj.id,
             objectType.INDEX,
             `"${sourceObj.schema}"."${index}"`,
@@ -468,7 +483,7 @@ export function compareTableIndexes(
           //It will recreate a dropped index because changes happens on involved columns
           lines.push(stmt`${sourceObj.definition};`);
           lines.push(
-            sql.generateChangeCommentScript(
+            generateChangeCommentScript(
               sourceObj.id,
               objectType.INDEX,
               `"${sourceObj.schema}"."${index}"`,
@@ -478,7 +493,7 @@ export function compareTableIndexes(
         } else {
           if (sourceObj.comment != targetObj.comment)
             lines.push(
-              sql.generateChangeCommentScript(
+              generateChangeCommentScript(
                 sourceObj.id,
                 objectType.INDEX,
                 `"${sourceObj.schema}"."${index}"`,
@@ -491,7 +506,7 @@ export function compareTableIndexes(
       //Table index not exists on target database, then generate script to add index
       lines.push(stmt`${sourceObj.definition};`);
       lines.push(
-        sql.generateChangeCommentScript(
+        generateChangeCommentScript(
           sourceObj.id,
           objectType.INDEX,
           `"${sourceObj.schema}"."${index}"`,
@@ -505,7 +520,7 @@ export function compareTableIndexes(
     //Get dropped indexes
     if (!sourceTableIndexes[index] && !droppedIndexes.includes(index))
       //Table index not exists on source, then generate script to drop index
-      lines.push(sql.generateDropIndexScript(targetTableIndexes[index]));
+      lines.push(generateDropIndexScript(targetTableIndexes[index]));
   }
 
   return lines;
@@ -530,10 +545,10 @@ export function compareTablePolicies(
       isEqual(roles, targetObj.roles);
     if (!isSame) {
       if (targetObj) {
-        lines.push(sql.dropPolicy(table.schema, table.name, name));
+        lines.push(dropPolicy(table.schema, table.name, name));
       }
       lines.push(
-        sql.createPolicy(table.schema, table.name, {
+        createPolicy(table.schema, table.name, {
           ...sourceObj,
           roles,
         })
@@ -541,7 +556,7 @@ export function compareTablePolicies(
     }
     if (!commentIsEqual(sourceObj.comment, targetObj?.comment)) {
       lines.push(
-        sql.generateChangeCommentScript(
+        generateChangeCommentScript(
           sourceObj.id,
           objectType.POLICY,
           name,
@@ -556,7 +571,7 @@ export function compareTablePolicies(
     if (source[name]) {
       continue;
     }
-    lines.push(sql.dropPolicy(table.schema, table.name, name));
+    lines.push(dropPolicy(table.schema, table.name, name));
   }
 
   return lines;
@@ -623,12 +638,12 @@ export function compareTablePrivileges(
 
       if (Object.keys(changes).length > 0)
         lines.push(
-          ...sql.generateChangesTableRoleGrantsScript(tableName, role, changes)
+          ...generateChangesTableRoleGrantsScript(tableName, role, changes)
         );
     } else {
       //Table grants for role not exists on target database, then generate script to add role privileges
       lines.push(
-        sql.generateTableRoleGrantsScript(
+        generateTableRoleGrantsScript(
           tableName,
           role,
           sourceTablePrivileges[role]

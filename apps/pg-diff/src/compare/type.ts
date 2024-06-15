@@ -3,7 +3,19 @@ import { Config } from '../models/config';
 import { Type, Column } from '../catalog/database-objects';
 import { Sql } from '../stmt';
 import { ColumnChanges, commentIsEqual } from './utils';
-import * as sql from '../sql-script-generator';
+import {
+  generateDropTableColumnScript,
+  generateAddTableColumnScript,
+  generateChangeTableColumnScript,
+} from './sql/column';
+import { generateChangeCommentScript } from './sql/misc';
+import {
+  generateChangeTypeOwnerScript,
+  generateCreateTypeScript,
+  generateDropTypeScript,
+  generateAddTypeColumnScript,
+  generateDropTypeColumnScript,
+} from './sql/type';
 
 export function compareTypes(
   source: Record<string, Type>,
@@ -28,11 +40,11 @@ export function compareTypes(
 
       const owner = config.compareOptions.mapRole(sourceObj.owner);
       if (owner !== targetObj.owner) {
-        sqlScript.push(sql.generateChangeTypeOwnerScript(sourceObj, owner));
+        sqlScript.push(generateChangeTypeOwnerScript(sourceObj, owner));
       }
       if (!commentIsEqual(sourceObj.comment, targetObj?.comment)) {
         sqlScript.push(
-          sql.generateChangeCommentScript(
+          generateChangeCommentScript(
             sourceObj.id,
             objectType.TYPE,
             name,
@@ -42,10 +54,10 @@ export function compareTypes(
       }
     } else {
       //Table not exists on target database, then generate the script to create table
-      sqlScript.push(sql.generateCreateTypeScript(sourceObj));
+      sqlScript.push(generateCreateTypeScript(sourceObj));
       if (sourceObj.comment) {
         sqlScript.push(
-          sql.generateChangeCommentScript(
+          generateChangeCommentScript(
             sourceObj.id,
             objectType.TYPE,
             name,
@@ -65,7 +77,7 @@ export function compareTypes(
       if (source[name] || name === migrationFullTableName) {
         continue;
       }
-      sqlScript.push(sql.generateDropTypeScript(target[name]));
+      sqlScript.push(generateDropTypeScript(target[name]));
     }
   }
 
@@ -88,10 +100,10 @@ function compareTypeColumns(
       );
     } else {
       //Table column not exists on target database, then generate script to add column
-      sqlScript.push(sql.generateAddTypeColumnScript(type, sourceObj));
+      sqlScript.push(generateAddTypeColumnScript(type, sourceObj));
       if (sourceObj.comment) {
         sqlScript.push(
-          sql.generateChangeCommentScript(
+          generateChangeCommentScript(
             sourceObj.id,
             objectType.COLUMN,
             sourceObj.fullName,
@@ -107,7 +119,7 @@ function compareTypeColumns(
       continue;
     }
     //Table column not exists on source, then generate script to drop column
-    sqlScript.push(sql.generateDropTypeColumnScript(type, target[name]));
+    sqlScript.push(generateDropTypeColumnScript(type, target[name]));
   }
 
   return sqlScript;
@@ -149,21 +161,21 @@ function compareTableColumn(table: string, source: Column, target: Column) {
       source.default != target.default)
   ) {
     changes = {};
-    sqlScript.push(sql.generateDropTableColumnScript(table, source.name, true));
-    sqlScript.push(sql.generateAddTableColumnScript(table, source));
+    sqlScript.push(generateDropTableColumnScript(table, source.name, true));
+    sqlScript.push(generateAddTableColumnScript(table, source));
   }
 
   if (Object.keys(changes).length > 0) {
     let rawColumnName = source.name.substring(1).slice(0, -1);
 
     sqlScript.push(
-      sql.generateChangeTableColumnScript(table, source.name, changes)
+      generateChangeTableColumnScript(table, source.name, changes)
     );
   }
 
   if (source.comment != target.comment)
     sqlScript.push(
-      sql.generateChangeCommentScript(
+      generateChangeCommentScript(
         source.id,
         objectType.COLUMN,
         source.fullName,

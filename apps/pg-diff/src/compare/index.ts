@@ -11,8 +11,6 @@ import {
   TableObject,
   ViewDefinition,
 } from '../catalog/database-objects';
-import { SequenceProperties } from '../sql-script-generator';
-import * as sql from '../sql-script-generator';
 import objectType from '../enums/object-type';
 
 import EventEmitter from 'events';
@@ -21,9 +19,9 @@ import { ClientBase } from 'pg';
 import { getServerVersion } from '../utils';
 import { Sql } from '../stmt';
 import { ColumnChanges } from './utils';
-import { compareTypes } from './types';
+import { compareTypes } from './type';
 import { compareDomains } from './domain';
-import { compareTablesRecords } from './record';
+import { compareTablesRecords } from './table-record';
 import {
   compareTableIndexes,
   compareTablePolicies,
@@ -32,6 +30,34 @@ import {
 } from './table';
 import { loadCatalog } from '../catalog';
 import { retrieveAllSchemas } from '../catalog/catalog-api';
+import {
+  generateChangeAggregateScript,
+  generateCreateAggregateScript,
+  generateDropAggregateScript,
+} from './sql/aggregate';
+import {
+  generateDropMaterializedViewScript,
+  generateCreateMaterializedViewScript,
+} from './sql/materialized-view';
+import { generateChangeCommentScript } from './sql/misc';
+import {
+  generateDropProcedureScript,
+  generateCreateProcedureScript,
+  generateChangeProcedureOwnerScript,
+  generateChangesProcedureRoleGrantsScript,
+  generateProcedureRoleGrantsScript,
+} from './sql/procedure';
+import { generateCreateSchemaScript } from './sql/schema';
+import {
+  generateRenameSequenceScript,
+  generateCreateSequenceScript,
+  generateChangeSequencePropertyScript,
+  SequenceProperties,
+  generateChangesSequenceRoleGrantsScript,
+  generateSequenceRoleGrantsScript,
+} from './sql/sequence';
+import { generateChangeTableOwnerScript } from './sql/table';
+import { generateDropViewScript, generateCreateViewScript } from './sql/view';
 
 export async function compare(config: Config, eventEmitter: EventEmitter) {
   eventEmitter.emit('compare', 'Compare started', 0);
@@ -236,9 +262,9 @@ export function compareSchemas(
 
     if (!targetObj) {
       //Schema not exists on target database, then generate script to create schema
-      lines.push(sql.generateCreateSchemaScript(sourceSchema, sourceObj.owner));
+      lines.push(generateCreateSchemaScript(sourceSchema, sourceObj.owner));
       lines.push(
-        sql.generateChangeCommentScript(
+        generateChangeCommentScript(
           sourceObj.id,
           objectType.SCHEMA,
           sourceSchema,
@@ -249,7 +275,7 @@ export function compareSchemas(
 
     if (targetObj && sourceObj.comment != targetObj.comment)
       lines.push(
-        sql.generateChangeCommentScript(
+        generateChangeCommentScript(
           sourceObj.id,
           objectType.SCHEMA,
           sourceSchema,
@@ -299,10 +325,10 @@ export function compareViews(
       let targetViewDefinition = targetObj.definition.replace(/\r/g, '');
       if (sourceViewDefinition != targetViewDefinition) {
         if (!droppedViews.includes(view))
-          lines.push(sql.generateDropViewScript(view));
-        lines.push(sql.generateCreateViewScript(view, sourceObj));
+          lines.push(generateDropViewScript(view));
+        lines.push(generateCreateViewScript(view, sourceObj));
         lines.push(
-          sql.generateChangeCommentScript(
+          generateChangeCommentScript(
             sourceObj.id,
             objectType.VIEW,
             view,
@@ -312,7 +338,7 @@ export function compareViews(
       } else {
         if (droppedViews.includes(view))
           //It will recreate a dropped view because changes happens on involved columns
-          lines.push(sql.generateCreateViewScript(view, sourceObj));
+          lines.push(generateCreateViewScript(view, sourceObj));
 
         lines.push(
           ...compareTablePrivileges(
@@ -324,11 +350,11 @@ export function compareViews(
         );
 
         if (sourceObj.owner != targetObj.owner)
-          lines.push(sql.generateChangeTableOwnerScript(view, sourceObj.owner));
+          lines.push(generateChangeTableOwnerScript(view, sourceObj.owner));
 
         if (sourceObj.comment != targetObj.comment)
           lines.push(
-            sql.generateChangeCommentScript(
+            generateChangeCommentScript(
               sourceObj.id,
               objectType.VIEW,
               view,
@@ -338,9 +364,9 @@ export function compareViews(
       }
     } else {
       //View not exists on target database, then generate the script to create view
-      lines.push(sql.generateCreateViewScript(view, sourceObj));
+      lines.push(generateCreateViewScript(view, sourceObj));
       lines.push(
-        sql.generateChangeCommentScript(
+        generateChangeCommentScript(
           sourceObj.id,
           objectType.VIEW,
           view,
@@ -356,7 +382,7 @@ export function compareViews(
         continue;
       }
 
-      lines.push(sql.generateDropViewScript(view));
+      lines.push(generateDropViewScript(view));
     }
 
   return lines;
@@ -380,10 +406,10 @@ export function compareMaterializedViews(
       let targetViewDefinition = targetObj.definition.replace(/\r/g, '');
       if (sourceViewDefinition != targetViewDefinition) {
         if (!droppedViews.includes(view))
-          lines.push(sql.generateDropMaterializedViewScript(view));
-        lines.push(sql.generateCreateMaterializedViewScript(view, sourceObj));
+          lines.push(generateDropMaterializedViewScript(view));
+        lines.push(generateCreateMaterializedViewScript(view, sourceObj));
         lines.push(
-          sql.generateChangeCommentScript(
+          generateChangeCommentScript(
             sourceObj.id,
             objectType.MATERIALIZED_VIEW,
             view,
@@ -393,7 +419,7 @@ export function compareMaterializedViews(
       } else {
         if (droppedViews.includes(view))
           //It will recreate a dropped materialized view because changes happens on involved columns
-          lines.push(sql.generateCreateMaterializedViewScript(view, sourceObj));
+          lines.push(generateCreateMaterializedViewScript(view, sourceObj));
 
         lines.push(
           ...compareTableIndexes(
@@ -413,11 +439,11 @@ export function compareMaterializedViews(
         );
 
         if (sourceObj.owner != targetObj.owner)
-          lines.push(sql.generateChangeTableOwnerScript(view, sourceObj.owner));
+          lines.push(generateChangeTableOwnerScript(view, sourceObj.owner));
 
         if (sourceObj.comment != targetObj.comment)
           lines.push(
-            sql.generateChangeCommentScript(
+            generateChangeCommentScript(
               sourceObj.id,
               objectType.MATERIALIZED_VIEW,
               view,
@@ -427,9 +453,9 @@ export function compareMaterializedViews(
       }
     } else {
       //Materialized view not exists on target database, then generate the script to create materialized view
-      lines.push(sql.generateCreateMaterializedViewScript(view, sourceObj));
+      lines.push(generateCreateMaterializedViewScript(view, sourceObj));
       lines.push(
-        sql.generateChangeCommentScript(
+        generateChangeCommentScript(
           sourceObj.id,
           objectType.MATERIALIZED_VIEW,
           view,
@@ -444,7 +470,7 @@ export function compareMaterializedViews(
       if (sourceMaterializedViews[view]) {
         continue;
       }
-      lines.push(sql.generateDropMaterializedViewScript(view));
+      lines.push(generateDropMaterializedViewScript(view));
     }
 
   return lines;
@@ -480,12 +506,12 @@ export function compareProcedures(
         );
         if (sourceFunctionDefinition !== targetFunctionDefinition) {
           if (sourceObj.argTypes !== targetObj.argTypes) {
-            lines.push(sql.generateDropProcedureScript(sourceObj));
+            lines.push(generateDropProcedureScript(sourceObj));
           }
-          lines.push(sql.generateCreateProcedureScript(sourceObj));
+          lines.push(generateCreateProcedureScript(sourceObj));
           if (sourceObj.comment) {
             lines.push(
-              sql.generateChangeCommentScript(
+              generateChangeCommentScript(
                 sourceObj.id,
                 procedureType,
                 `${procedure}(${procedureArgs})`,
@@ -504,7 +530,7 @@ export function compareProcedures(
 
           if (sourceObj.owner != targetObj.owner)
             lines.push(
-              sql.generateChangeProcedureOwnerScript(
+              generateChangeProcedureOwnerScript(
                 procedure,
                 procedureArgs,
                 sourceObj.owner,
@@ -514,7 +540,7 @@ export function compareProcedures(
 
           if (sourceObj.comment != sourceObj.comment)
             lines.push(
-              sql.generateChangeCommentScript(
+              generateChangeCommentScript(
                 sourceObj.id,
                 procedureType,
                 `${procedure}(${procedureArgs})`,
@@ -524,10 +550,10 @@ export function compareProcedures(
         }
       } else {
         //Procedure not exists on target database, then generate the script to create procedure
-        lines.push(sql.generateCreateProcedureScript(sourceObj));
+        lines.push(generateCreateProcedureScript(sourceObj));
         if (sourceObj.comment) {
           lines.push(
-            sql.generateChangeCommentScript(
+            generateChangeCommentScript(
               sourceObj.id,
               procedureType,
               `${procedure}(${procedureArgs})`,
@@ -549,9 +575,7 @@ export function compareProcedures(
           continue;
         }
         lines.push(
-          sql.generateDropProcedureScript(
-            targetFunctions[procedure][procedureArgs]
-          )
+          generateDropProcedureScript(targetFunctions[procedure][procedureArgs])
         );
       }
     }
@@ -576,9 +600,9 @@ export function compareAggregates(
         //Aggregate exists on both database, then compare procedure definition
         //TODO: Is correct that if definition is different automatically GRANTS and OWNER will not be updated also?
         if (sourceObj.definition != targetObj.definition) {
-          lines.push(sql.generateChangeAggregateScript(sourceObj));
+          lines.push(generateChangeAggregateScript(sourceObj));
           lines.push(
-            sql.generateChangeCommentScript(
+            generateChangeCommentScript(
               sourceObj.id,
               objectType.AGGREGATE,
               `${aggregate}(${aggregateArgs})`,
@@ -602,7 +626,7 @@ export function compareAggregates(
               targetObj.owner
             )
               sqlScript.push(
-                sql.generateChangeAggregateOwnerScript(
+                generateChangeAggregateOwnerScript(
                   aggregate,
                   aggregateArgs,
                   sourceObj.owner,
@@ -614,7 +638,7 @@ export function compareAggregates(
               targetObj.comment
             )
               sqlScript.push(
-                sql.generateChangeCommentScript(
+                generateChangeCommentScript(
                   objectType.AGGREGATE,
                   `${aggregate}(${aggregateArgs})`,
                   sourceObj.comment,
@@ -623,10 +647,10 @@ export function compareAggregates(
         }
       } else {
         //Aggregate not exists on target database, then generate the script to create aggregate
-        lines.push(sql.generateCreateAggregateScript(sourceObj));
+        lines.push(generateCreateAggregateScript(sourceObj));
         if (sourceObj.comment) {
           lines.push(
-            sql.generateChangeCommentScript(
+            generateChangeCommentScript(
               sourceObj.id,
               objectType.FUNCTION,
               `${aggregate}(${aggregateArgs})`,
@@ -645,7 +669,7 @@ export function compareAggregates(
           !sourceAggregates[aggregate] ||
           !sourceAggregates[aggregate][aggregateArgs]
         )
-          lines.push(sql.generateDropAggregateScript(aggregate, aggregateArgs));
+          lines.push(generateDropAggregateScript(aggregate, aggregateArgs));
       }
     }
 
@@ -669,12 +693,12 @@ export function compareProcedurePrivileges(
       if (sourceObj.execute !== targetObj.execute) {
         changes.execute = sourceObj.execute;
         lines.push(
-          sql.generateChangesProcedureRoleGrantsScript(schema, role, changes)
+          generateChangesProcedureRoleGrantsScript(schema, role, changes)
         );
       }
     } else {
       //Procedure grants for role not exists on target database, then generate script to add role privileges
-      lines.push(sql.generateProcedureRoleGrantsScript(schema, role));
+      lines.push(generateProcedureRoleGrantsScript(schema, role));
     }
   }
 
@@ -701,10 +725,7 @@ export function compareSequences(
       //Sequence exists on both database, then compare sequence definition
       if (sequence !== targetSequence)
         lines.push(
-          sql.generateRenameSequenceScript(
-            targetSequence,
-            `"${sourceObj.name}"`
-          )
+          generateRenameSequenceScript(targetSequence, `"${sourceObj.name}"`)
         );
 
       lines.push(
@@ -721,7 +742,7 @@ export function compareSequences(
 
       if (sourceObj.comment != targetObj.comment)
         lines.push(
-          sql.generateChangeCommentScript(
+          generateChangeCommentScript(
             sourceObj.id,
             objectType.SEQUENCE,
             sequence,
@@ -731,14 +752,14 @@ export function compareSequences(
     } else {
       //Sequence not exists on target database, then generate the script to create sequence
       lines.push(
-        sql.generateCreateSequenceScript(
+        generateCreateSequenceScript(
           sourceObj,
           config.compareOptions.mapRole(sourceObj.owner)
         )
       );
       if (sourceObj.comment) {
         lines.push(
-          sql.generateChangeCommentScript(
+          generateChangeCommentScript(
             sourceObj.id,
             objectType.SEQUENCE,
             sequence,
@@ -795,7 +816,7 @@ export function compareSequenceDefinition(
       continue;
     }
     lines.push(
-      sql.generateChangeSequencePropertyScript(
+      generateChangeSequencePropertyScript(
         sequence,
         property as SequenceProperties,
         sourceObj
@@ -838,12 +859,12 @@ export function compareSequencePrivileges(
 
       if (Object.keys(changes).length > 0)
         lines.push(
-          sql.generateChangesSequenceRoleGrantsScript(sequence, role, changes)
+          generateChangesSequenceRoleGrantsScript(sequence, role, changes)
         );
     } else {
       //Sequence grants for role not exists on target database, then generate script to add role privileges
       lines.push(
-        sql.generateSequenceRoleGrantsScript(
+        generateSequenceRoleGrantsScript(
           sequence,
           role,
           sourceSequencePrivileges[role]

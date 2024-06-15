@@ -1,7 +1,6 @@
 import path from 'path';
 import pg from 'pg';
 import { migrationHistoryTableSchema } from './models/migration-history-table-schema';
-import * as sql from './sql-script-generator';
 import { PatchInfo } from './models/patch-info';
 import { ServerVersion } from './models/server-version';
 import { Config } from './models/config';
@@ -9,6 +8,7 @@ import { Client } from 'pg';
 import { ClientConfig } from './models/client-config';
 import { MigrationConfig } from './models/migration-config';
 import { TableObject } from './catalog/database-objects';
+import { generateCreateTableScript } from './compare/sql/table';
 
 export class core {
   static prepareMigrationConfig(config: Config): MigrationConfig {
@@ -67,7 +67,7 @@ export class core {
 
     migrationHistoryTableSchema.owner = config.migrationHistory.tableOwner;
 
-    let sqlScript = sql.generateCreateTableScript(
+    let sqlScript = generateCreateTableScript(
       config.migrationHistory.tableName,
       migrationHistoryTableSchema as unknown as TableObject
     );

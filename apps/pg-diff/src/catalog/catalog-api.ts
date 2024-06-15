@@ -117,6 +117,7 @@ export async function typeColumns(
     };
   });
 }
+
 export async function retrieveTables(client: ClientBase, config: Config) {
   const result: Record<string, TableObject> = {};
   const tableNamesPriority: string[] = [];

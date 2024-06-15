@@ -6,8 +6,13 @@ import { Config } from '../models/config';
 import { Sql, stmt } from '../stmt';
 import { TableData } from '../models/table-data';
 import { getServerVersion } from '../utils';
-import * as sql from '../sql-script-generator';
 import { isEqual } from 'lodash';
+import { generateSetSequenceValueScript } from './sql/sequence';
+import {
+  generateInsertTableRecordScript,
+  generateDeleteTableRecordScript,
+  generateUpdateTableRecordScript,
+} from './sql/table-record';
 
 export async function compareTablesRecords(
   config: Config,
@@ -271,7 +276,7 @@ function compareTableRecords(
       //A record with same KEY FIELDS not exists, then create a new record
       delete record.rowHash; //Remove property from "record" object in order to not add it on sql script
       result.lines.push(
-        sql.generateInsertTableRecordScript(
+        generateInsertTableRecordScript(
           fullTableName,
           record,
           tableData.sourceData.records.fields,
@@ -317,7 +322,7 @@ function compareTableRecords(
 
     //Generate sql script to delete record because not exists on source database table
     result.lines.push(
-      sql.generateDeleteTableRecordScript(
+      generateDeleteTableRecordScript(
         fullTableName,
         tableData.sourceData.records.fields,
         keyFieldsMap
@@ -339,7 +344,7 @@ function rebaseSequences(
   }"`;
 
   tableData.sourceData.sequences.forEach((sequence) => {
-    lines.push(sql.generateSetSequenceValueScript(fullTableName, sequence));
+    lines.push(generateSetSequenceValueScript(fullTableName, sequence));
   });
 
   return lines;
@@ -377,7 +382,7 @@ function compareTableRecordFields(
   if (Object.keys(changes).length > 0) {
     result.isSequenceRebaseNeeded = true;
     result.lines.push(
-      sql.generateUpdateTableRecordScript(table, fields, keyFieldsMap, changes)
+      generateUpdateTableRecordScript(table, fields, keyFieldsMap, changes)
     );
   }
 

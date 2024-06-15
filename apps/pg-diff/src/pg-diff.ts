@@ -1,4 +1,4 @@
-import { CompareApi } from './compare/compare-api';
+import { CompareApi } from './compare';
 import { MigrationApi } from './migration-api';
 import { Config } from './models/config';
 import EventEmitter from 'events';

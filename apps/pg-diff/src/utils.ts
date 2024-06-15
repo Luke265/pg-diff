@@ -2,10 +2,69 @@ import { ClientBase } from 'pg';
 import { ServerVersion } from './models/server-version';
 import { Config } from './models/config';
 import { Sql } from './stmt';
-import EventEmitter from 'events';
 import path from 'path';
 import fs from 'fs';
 import { execSync } from 'child_process';
+
+export function sortByDependencies(items: Sql[]): Sql[] {
+  // Create a map of declarations to items
+  const declarationMap = new Map<number | string, Sql>();
+  items.forEach((item) => {
+    item.declarations.forEach((declaration) => {
+      declarationMap.set(declaration, item);
+    });
+  });
+
+  // Initialize the in-degree map and adjacency list
+  const inDegree = new Map<Sql, number>();
+  const adjList = new Map();
+  items.forEach((item) => {
+    inDegree.set(item, 0);
+    adjList.set(item, []);
+  });
+
+  // Populate in-degree map and adjacency list
+  items.forEach((item) => {
+    item.dependencies.forEach((dep) => {
+      const depItem = declarationMap.get(dep);
+      if (depItem) {
+        adjList.get(depItem).push(item);
+        inDegree.set(item, inDegree.get(item) + 1);
+      }
+    });
+  });
+
+  // Topological sort using Kahn's algorithm
+  const sorted: Sql[] = [];
+  const queue: Sql[] = [];
+
+  // Find all items with no dependencies (in-degree of 0)
+  inDegree.forEach((degree, item) => {
+    if (degree === 0) {
+      queue.push(item);
+    }
+  });
+
+  while (queue.length > 0) {
+    const item = queue.shift();
+    sorted.push(item);
+
+    // Reduce the in-degree of dependent items
+    adjList.get(item).forEach((dependent) => {
+      inDegree.set(dependent, inDegree.get(dependent) - 1);
+      if (inDegree.get(dependent) === 0) {
+        queue.push(dependent);
+      }
+    });
+  }
+  //ase
+  // Check if there was a cycle (not all items were sorted)
+  if (sorted.length !== items.length) {
+    throw new Error('There is a cycle in the dependencies');
+  }
+
+  return sorted.sort((a, b) => a.weight - b.weight);
+}
 
 export async function getServerVersion(
   client: ClientBase
