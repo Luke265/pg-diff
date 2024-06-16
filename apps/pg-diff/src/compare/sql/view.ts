@@ -1,10 +1,11 @@
-import { join, stmt } from '../../stmt';
+import { join, stmt } from '../stmt';
 import { ViewDefinition } from '../../catalog/database-objects';
 import { generateTableGrantsDefinition } from './table';
 
 export function generateCreateViewScript(view: string, schema: ViewDefinition) {
   const privileges = Object.entries(schema.privileges)
     .map(([role, obj]) => generateTableGrantsDefinition(view, role, obj))
+    .flat()
     .filter((v) => !!v);
   return stmt`CREATE OR REPLACE VIEW ${view} AS ${schema.definition}
   ALTER VIEW IF EXISTS ${view} OWNER TO ${schema.owner};

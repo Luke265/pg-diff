@@ -1,4 +1,4 @@
-import { stmt } from '../../stmt';
+import { stmt } from '../stmt';
 import { IndexDefinition } from '../../catalog/database-objects';
 
 export function generateChangeIndexScript(index: string, definition: string) {

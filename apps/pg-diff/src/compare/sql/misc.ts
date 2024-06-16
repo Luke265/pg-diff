@@ -1,17 +1,17 @@
-import { dependency, stmt } from '../../stmt';
+import { dependency, stmt } from '../stmt';
 
 export function generateChangeCommentScript(
   id: number | string,
   objectType: string,
   objectName: string,
-  comment: string,
-  parentObjectName: string | null = null
+  comment: string | null,
+  parentObjectName: string | null = null,
 ) {
   const description = comment ? `'${comment.replaceAll("'", "''")}'` : 'NULL';
   const parentObject = parentObjectName ? `ON ${parentObjectName}` : '';
   return stmt`COMMENT ON ${dependency(
     objectType,
-    id
+    id,
   )} ${objectName} ${parentObject} IS ${description};`;
 }
 

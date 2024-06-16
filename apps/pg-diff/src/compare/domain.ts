@@ -1,7 +1,6 @@
 import objectType from '../enums/object-type';
-import { Config } from '../models/config';
 import { Domain } from '../catalog/database-objects';
-import { Sql } from '../stmt';
+import { Sql } from './stmt';
 import { commentIsEqual } from './utils';
 import {
   generateChangeDomainCheckScript,
@@ -10,11 +9,12 @@ import {
   generateDropDomainScript,
 } from './sql/domain';
 import { generateChangeCommentScript } from './sql/misc';
+import { Config } from '../config';
 
 export function compareDomains(
   source: Record<string, Domain>,
   target: Record<string, Domain>,
-  config: Config
+  config: Config,
 ) {
   const sqlScript: Sql[] = [];
   for (const name in source) {
@@ -36,8 +36,8 @@ export function compareDomains(
             sourceObj.id,
             objectType.DOMAIN,
             name,
-            sourceObj.comment
-          )
+            sourceObj.comment,
+          ),
         );
       }
     } else {
@@ -49,8 +49,8 @@ export function compareDomains(
             sourceObj.id,
             objectType.DOMAIN,
             name,
-            sourceObj.comment
-          )
+            sourceObj.comment,
+          ),
         );
       }
     }

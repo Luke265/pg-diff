@@ -1,6 +1,5 @@
 import { isEqual } from 'lodash';
 import objectType from '../enums/object-type';
-import { Config } from '../models/config';
 import {
   TableObject,
   DatabaseObjects,
@@ -11,7 +10,7 @@ import {
   Column,
   Privileges,
 } from '../catalog/database-objects';
-import { Sql, stmt } from '../stmt';
+import { Sql, stmt } from './stmt';
 import { commentIsEqual, ColumnChanges } from './utils';
 import {
   generateAddTableColumnScript,
@@ -33,6 +32,7 @@ import {
   generateTableRoleGrantsScript,
 } from './sql/table';
 import { generateDropViewScript } from './sql/view';
+import { Config } from '../config';
 
 export function compareTables(
   sourceTables: Record<string, TableObject>,
@@ -40,9 +40,9 @@ export function compareTables(
   droppedConstraints: string[],
   droppedIndexes: string[],
   droppedViews: string[],
-  addedColumns: any,
+  addedColumns: Record<string, string[]>,
   addedTables: string[],
-  config: Config
+  config: Config,
 ) {
   const lines: Sql[] = [];
 
@@ -58,8 +58,8 @@ export function compareTables(
           ...compareTableOptions(
             sourceTable,
             sourceObj.options,
-            targetObj.options
-          )
+            targetObj.options,
+          ),
         );
 
       lines.push(
@@ -70,8 +70,8 @@ export function compareTables(
           droppedConstraints,
           droppedIndexes,
           droppedViews,
-          addedColumns
-        )
+          addedColumns,
+        ),
       );
 
       lines.push(
@@ -79,16 +79,16 @@ export function compareTables(
           sourceObj,
           sourceObj.constraints,
           targetObj.constraints,
-          droppedConstraints
-        )
+          droppedConstraints,
+        ),
       );
 
       lines.push(
         ...compareTableIndexes(
           sourceObj.indexes,
           targetObj.indexes,
-          droppedIndexes
-        )
+          droppedIndexes,
+        ),
       );
 
       lines.push(
@@ -96,8 +96,8 @@ export function compareTables(
           sourceTable,
           sourceObj.privileges,
           targetObj.privileges,
-          config
-        )
+          config,
+        ),
       );
 
       const owner = config.compareOptions.mapRole(sourceObj.owner);
@@ -109,8 +109,8 @@ export function compareTables(
             sourceObj.id,
             objectType.TABLE,
             sourceTable,
-            sourceObj.comment
-          )
+            sourceObj.comment,
+          ),
         );
       }
     } else {
@@ -123,8 +123,8 @@ export function compareTables(
             sourceObj.id,
             objectType.TABLE,
             sourceTable,
-            sourceObj.comment
-          )
+            sourceObj.comment,
+          ),
         );
       }
     }
@@ -147,7 +147,7 @@ export function compareTables(
 function compareTableOptions(
   tableName: string,
   sourceTableOptions: TableOptions,
-  targetTableOptions: TableOptions
+  targetTableOptions: TableOptions,
 ) {
   if (sourceTableOptions.withOids === targetTableOptions.withOids) {
     return [];
@@ -162,7 +162,7 @@ function compareTableColumns(
   droppedConstraints: string[],
   droppedIndexes: string[],
   droppedViews: string[],
-  addedColumns: any
+  addedColumns: Record<string, string[]>,
 ) {
   const lines: Sql[] = [];
   const targetTable = dbTargetObjects.tables[tableName];
@@ -179,8 +179,8 @@ function compareTableColumns(
           dbTargetObjects,
           droppedConstraints,
           droppedIndexes,
-          droppedViews
-        )
+          droppedViews,
+        ),
       );
     } else {
       //Table column not exists on target database, then generate script to add column
@@ -191,8 +191,8 @@ function compareTableColumns(
             sourceColumnDef.id,
             objectType.COLUMN,
             `${tableName}.${sourceTableColumn}`,
-            sourceColumnDef.comment
-          )
+            sourceColumnDef.comment,
+          ),
         );
       }
 
@@ -217,7 +217,7 @@ function compareTableColumn(
   dbTargetObjects: DatabaseObjects,
   droppedConstraints: string[],
   droppedIndexes: string[],
-  droppedViews: string[]
+  droppedViews: string[],
 ) {
   const lines: Sql[] = [];
   const targetTable = dbTargetObjects.tables[table.fullName];
@@ -322,7 +322,7 @@ function compareTableColumn(
     //Check if the column is used into materialized view
     for (let view in dbTargetObjects.materializedViews) {
       dbTargetObjects.materializedViews[view].dependencies.forEach(
-        (dependency: any) => {
+        (dependency) => {
           let fullDependencyName = `"${dependency.schemaName}"."${dependency.tableName}"`;
           if (
             fullDependencyName == table.fullName &&
@@ -331,12 +331,12 @@ function compareTableColumn(
             lines.push(generateDropMaterializedViewScript(view));
             droppedViews.push(view);
           }
-        }
+        },
       );
     }
 
     lines.push(
-      generateChangeTableColumnScript(table.fullName, columnName, changes)
+      generateChangeTableColumnScript(table.fullName, columnName, changes),
     );
   }
 
@@ -346,8 +346,8 @@ function compareTableColumn(
         sourceTableColumn.id,
         objectType.COLUMN,
         `${table.fullName}.${columnName}`,
-        sourceTableColumn.comment
-      )
+        sourceTableColumn.comment,
+      ),
     );
 
   return lines;
@@ -357,7 +357,7 @@ function compareTableConstraints(
   table: TableObject,
   sourceTableConstraints: Record<string, ConstraintDefinition>,
   targetTableConstraints: Record<string, ConstraintDefinition>,
-  droppedConstraints: string[]
+  droppedConstraints: string[],
 ) {
   const lines: Sql[] = [];
   for (const constraint in sourceTableConstraints) {
@@ -371,7 +371,7 @@ function compareTableConstraints(
           lines.push(generateDropTableConstraintScript(table, sourceObj));
         }
         lines.push(
-          generateAddTableConstraintScript(table, constraint, sourceObj)
+          generateAddTableConstraintScript(table, constraint, sourceObj),
         );
         if (sourceObj.comment) {
           lines.push(
@@ -380,15 +380,15 @@ function compareTableConstraints(
               objectType.CONSTRAINT,
               constraint,
               sourceObj.comment,
-              table.fullName
-            )
+              table.fullName,
+            ),
           );
         }
       } else {
         if (droppedConstraints.includes(constraint)) {
           //It will recreate a dropped constraints because changes happens on involved columns
           lines.push(
-            generateAddTableConstraintScript(table, constraint, sourceObj)
+            generateAddTableConstraintScript(table, constraint, sourceObj),
           );
           if (sourceObj.comment) {
             lines.push(
@@ -397,8 +397,8 @@ function compareTableConstraints(
                 objectType.CONSTRAINT,
                 constraint,
                 sourceObj.comment,
-                table.fullName
-              )
+                table.fullName,
+              ),
             );
           }
         } else {
@@ -409,8 +409,8 @@ function compareTableConstraints(
                 objectType.CONSTRAINT,
                 constraint,
                 sourceObj.comment,
-                table.fullName
-              )
+                table.fullName,
+              ),
             );
           }
         }
@@ -418,7 +418,7 @@ function compareTableConstraints(
     } else {
       //Table constraint not exists on target database, then generate script to add constraint
       lines.push(
-        generateAddTableConstraintScript(table, constraint, sourceObj)
+        generateAddTableConstraintScript(table, constraint, sourceObj),
       );
       if (sourceObj.comment) {
         lines.push(
@@ -427,8 +427,8 @@ function compareTableConstraints(
             objectType.CONSTRAINT,
             constraint,
             sourceObj.comment,
-            table.fullName
-          )
+            table.fullName,
+          ),
         );
       }
     }
@@ -444,8 +444,8 @@ function compareTableConstraints(
       lines.push(
         generateDropTableConstraintScript(
           table,
-          targetTableConstraints[constraint]
-        )
+          targetTableConstraints[constraint],
+        ),
       );
   }
 
@@ -455,7 +455,7 @@ function compareTableConstraints(
 export function compareTableIndexes(
   sourceTableIndexes: Record<string, IndexDefinition>,
   targetTableIndexes: Record<string, IndexDefinition>,
-  droppedIndexes: string[]
+  droppedIndexes: string[],
 ) {
   const lines: Sql[] = [];
 
@@ -475,8 +475,8 @@ export function compareTableIndexes(
             sourceObj.id,
             objectType.INDEX,
             `"${sourceObj.schema}"."${index}"`,
-            sourceObj.comment
-          )
+            sourceObj.comment,
+          ),
         );
       } else {
         if (droppedIndexes.includes(index)) {
@@ -487,8 +487,8 @@ export function compareTableIndexes(
               sourceObj.id,
               objectType.INDEX,
               `"${sourceObj.schema}"."${index}"`,
-              sourceObj.comment
-            )
+              sourceObj.comment,
+            ),
           );
         } else {
           if (sourceObj.comment != targetObj.comment)
@@ -497,8 +497,8 @@ export function compareTableIndexes(
                 sourceObj.id,
                 objectType.INDEX,
                 `"${sourceObj.schema}"."${index}"`,
-                sourceObj.comment
-              )
+                sourceObj.comment,
+              ),
             );
         }
       }
@@ -510,8 +510,8 @@ export function compareTableIndexes(
           sourceObj.id,
           objectType.INDEX,
           `"${sourceObj.schema}"."${index}"`,
-          sourceObj.comment
-        )
+          sourceObj.comment,
+        ),
       );
     }
   }
@@ -529,7 +529,7 @@ export function compareTablePolicies(
   config: Config,
   table: TableObject,
   source: Record<string, Policy>,
-  target: Record<string, Policy>
+  target: Record<string, Policy>,
 ) {
   const lines: Sql[] = [];
   for (const name in source) {
@@ -551,7 +551,7 @@ export function compareTablePolicies(
         createPolicy(table.schema, table.name, {
           ...sourceObj,
           roles,
-        })
+        }),
       );
     }
     if (!commentIsEqual(sourceObj.comment, targetObj?.comment)) {
@@ -561,8 +561,8 @@ export function compareTablePolicies(
           objectType.POLICY,
           name,
           sourceObj.comment,
-          `"${table.schema}"."${table.name}"`
-        )
+          `"${table.schema}"."${table.name}"`,
+        ),
       );
     }
   }
@@ -581,7 +581,7 @@ export function compareTablePrivileges(
   tableName: string,
   sourceTablePrivileges: Record<string, Privileges>,
   targetTablePrivileges: Record<string, Privileges>,
-  config: Config
+  config: Config,
 ) {
   const lines: Sql[] = [];
 
@@ -638,16 +638,16 @@ export function compareTablePrivileges(
 
       if (Object.keys(changes).length > 0)
         lines.push(
-          ...generateChangesTableRoleGrantsScript(tableName, role, changes)
+          ...generateChangesTableRoleGrantsScript(tableName, role, changes),
         );
     } else {
       //Table grants for role not exists on target database, then generate script to add role privileges
       lines.push(
-        generateTableRoleGrantsScript(
+        ...generateTableRoleGrantsScript(
           tableName,
           role,
-          sourceTablePrivileges[role]
-        )
+          sourceTablePrivileges[role],
+        ),
       );
     }
   }

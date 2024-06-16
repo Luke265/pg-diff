@@ -1,5 +1,4 @@
 import { ClientBase } from 'pg';
-import { core } from '../core';
 import { Config } from './config';
 import { getServerVersion } from '../utils';
 import {
@@ -37,6 +36,7 @@ import {
   Type,
   ViewDefinition,
 } from './database-objects';
+import { checkServerCompatibility } from './utils';
 
 const COLUMN_TYPE_MAP = {
   int4: 'INTEGER',
@@ -49,9 +49,9 @@ export async function retrieveAllSchemas(client: ClientBase) {
 
 export async function retrieveSchemas(
   client: ClientBase,
-  schemas: string[]
+  schemas: string[],
 ): Promise<Record<string, Schema>> {
-  const result = {};
+  const result: Record<string, Schema> = {};
   const namespaces = await getSchemas(client, schemas);
   for (const row of namespaces.rows) {
     result[row.nspname] = row;
@@ -62,18 +62,20 @@ export async function retrieveSchemas(
 export async function typeColumns(
   client: ClientBase,
   schema: string,
-  typename: string
+  typename: string,
 ): Promise<Column[]> {
   const { rows } = await getTableColumns(
     client,
     schema,
     typename,
-    await getServerVersion(client)
+    await getServerVersion(client),
   );
   return rows.map((row): Column => {
     let columnIdentity: 'ALWAYS' | 'BY DEFAULT' | null = null;
     let defaultValue = row.adsrc;
-    let dataType = COLUMN_TYPE_MAP[row.typname] ?? row.typname;
+    let dataType =
+      COLUMN_TYPE_MAP[row.typname as keyof typeof COLUMN_TYPE_MAP] ??
+      row.typname;
     if (row.nspname !== 'pg_catalog' && row.nspname !== 'public') {
       dataType = `${row.nspname}.${dataType}`;
     }
@@ -97,7 +99,7 @@ export async function typeColumns(
     }
     const functIdsMatch = row.adbin?.matchAll(/FUNCEXPR :funcid (\d+)/g);
     const defaultFunctionIds = Array.from(functIdsMatch ?? []).map((m) =>
-      parseInt(m[1])
+      parseInt(m[1]),
     );
     return {
       id: row.id,
@@ -130,7 +132,7 @@ export async function retrieveTables(client: ClientBase, config: Config) {
         id: table.id,
         name: table.tablename,
         schema: table.schemaname,
-        fullName: `"${table.schemaname}"."${table.tablename}"`,
+        fullName,
         columns: {},
         constraints: {},
         options: {},
@@ -148,7 +150,7 @@ export async function retrieveTables(client: ClientBase, config: Config) {
       const constraints = await getTableConstraints(
         client,
         table.schemaname,
-        table.tablename
+        table.tablename,
       );
       constraints.rows.forEach((constraint) => {
         let constraintName = `"${constraint.conname}"`;
@@ -175,29 +177,29 @@ export async function retrieveTables(client: ClientBase, config: Config) {
               tableNamesPriority.splice(
                 indexOfCurrentTableName,
                 0,
-                tableNameToReorder
+                tableNameToReorder,
               );
             } else if (indexOfCurrentTableName < indexOfTableNameToReorder) {
               tableNamesPriority.splice(
                 indexOfCurrentTableName,
                 0,
-                tableNamesPriority.splice(indexOfTableNameToReorder, 1)[0]
+                tableNamesPriority.splice(indexOfTableNameToReorder, 1)[0],
               );
             }
           } else if (indexOfTableNameToReorder < 0) {
             tableNamesPriority.push(
-              `"${constraint.foreign_schema}"."${constraint.foreign_table}"`
+              `"${constraint.foreign_schema}"."${constraint.foreign_table}"`,
             );
           }
         }
       });
 
       //@mso -> relhadoids has been deprecated from PG v12.0
-      if (!core.checkServerCompatibility(serverVersion, 12, 0)) {
+      if (!checkServerCompatibility(serverVersion, 12, 0)) {
         const options = await getTableOptions(
           client,
           table.schemaname,
-          table.tablename
+          table.tablename,
         );
         options.rows.forEach((option) => {
           def.options = {
@@ -209,7 +211,7 @@ export async function retrieveTables(client: ClientBase, config: Config) {
       const indexes = await getTableIndexes(
         client,
         table.schemaname,
-        table.tablename
+        table.tablename,
       );
       indexes.rows.forEach((index) => {
         def.indexes[index.indexname] = {
@@ -224,12 +226,12 @@ export async function retrieveTables(client: ClientBase, config: Config) {
       const privileges = await getTablePrivileges(
         client,
         table.schemaname,
-        table.tablename
+        table.tablename,
       );
       privileges.rows
         .filter(
           (row) =>
-            config.roles.length <= 0 || config.roles.includes(row.usename)
+            config.roles.length <= 0 || config.roles.includes(row.usename),
         )
         .forEach((privilege) => {
           def.privileges[privilege.usename] = {
@@ -246,7 +248,7 @@ export async function retrieveTables(client: ClientBase, config: Config) {
       const policies = await getTablePolicies(
         client,
         table.schemaname,
-        table.tablename
+        table.tablename,
       );
       policies.rows.forEach((row) => {
         let using = row.policy_qual;
@@ -270,11 +272,11 @@ export async function retrieveTables(client: ClientBase, config: Config) {
           for: row.polcmd,
         };
       });
-      //TODO: Missing discovering of PARTITIONv
+      //TODO: Missing discovering of PARTITION
       //TODO: Missing discovering of TRIGGER
       //TODO: Missing discovering of GRANTS for COLUMNS
       //TODO: Missing discovering of WITH GRANT OPTION, that is used to indicate if user\role can add GRANTS to other users
-    })
+    }),
   );
 
   //Re-order tables based on priority
@@ -296,7 +298,7 @@ export async function retrieveViews(client: ClientBase, config: Config) {
   await Promise.all(
     views.rows.map(async (view) => {
       const fullViewName = `"${view.schemaname}"."${view.viewname}"`;
-      const def = (result[fullViewName] = {
+      const def: ViewDefinition = (result[fullViewName] = {
         id: view.id,
         definition: view.definition,
         owner: view.viewowner,
@@ -308,12 +310,12 @@ export async function retrieveViews(client: ClientBase, config: Config) {
       const privileges = await getViewPrivileges(
         client,
         view.schemaname,
-        view.viewname
+        view.viewname,
       );
       privileges.rows
         .filter(
           (row) =>
-            config.roles.length <= 0 || config.roles.includes(row.usename)
+            config.roles.length <= 0 || config.roles.includes(row.usename),
         )
         .forEach((privilege) => {
           def.privileges[privilege.usename] = {
@@ -330,7 +332,7 @@ export async function retrieveViews(client: ClientBase, config: Config) {
       const dependencies = await getViewDependencies(
         client,
         view.schemaname,
-        view.viewname
+        view.viewname,
       );
       dependencies.rows.forEach((dependency) => {
         def.dependencies.push({
@@ -339,7 +341,7 @@ export async function retrieveViews(client: ClientBase, config: Config) {
           columnName: dependency.columnname,
         });
       });
-    })
+    }),
   );
 
   //TODO: Missing discovering of TRIGGER
@@ -351,14 +353,14 @@ export async function retrieveViews(client: ClientBase, config: Config) {
 
 export async function retrieveMaterializedViews(
   client: ClientBase,
-  config: Config
+  config: Config,
 ) {
   const result: Record<string, MaterializedViewDefinition> = {};
   const views = await getMaterializedViews(client, config.schemas);
   await Promise.all(
     views.rows.map(async (view) => {
       const fullViewName = `"${view.schemaname}"."${view.matviewname}"`;
-      const def = (result[fullViewName] = {
+      const def: MaterializedViewDefinition = (result[fullViewName] = {
         id: view.id,
         definition: view.definition,
         indexes: {},
@@ -371,10 +373,12 @@ export async function retrieveMaterializedViews(
       const indexes = await getTableIndexes(
         client,
         view.schemaname,
-        view.matviewname
+        view.matviewname,
       );
       indexes.rows.forEach((index) => {
         def.indexes[index.indexname] = {
+          id: index.id,
+          name: index.indexname,
           definition: index.indexdef,
           comment: index.comment,
           schema: view.schemaname,
@@ -384,12 +388,12 @@ export async function retrieveMaterializedViews(
       let privileges = await getMaterializedViewPrivileges(
         client,
         view.schemaname,
-        view.matviewname
+        view.matviewname,
       );
       privileges.rows
         .filter(
           (row) =>
-            config.roles.length <= 0 || config.roles.includes(row.usename)
+            config.roles.length <= 0 || config.roles.includes(row.usename),
         )
         .forEach((privilege) => {
           def.privileges[privilege.usename] = {
@@ -406,7 +410,7 @@ export async function retrieveMaterializedViews(
       const dependencies = await getViewDependencies(
         client,
         view.schemaname,
-        view.matviewname
+        view.matviewname,
       );
       dependencies.rows.forEach((dependency) => {
         def.dependencies.push({
@@ -415,7 +419,7 @@ export async function retrieveMaterializedViews(
           columnName: dependency.columnname,
         });
       });
-    })
+    }),
   );
 
   //TODO: Missing discovering of GRANTS for COLUMNS
@@ -429,14 +433,14 @@ export async function retrieveFunctions(client: ClientBase, config: Config) {
   const { rows } = await getFunctions(
     client,
     config.schemas,
-    await getServerVersion(client)
+    await getServerVersion(client),
   );
 
   await Promise.all(
     rows.map(async (row) => {
       const fullName = `"${row.nspname}"."${row.proname}"`;
       const map = (result[fullName] ??= {});
-      const def = (map[row.argtypes] = {
+      const def: FunctionDefinition = (map[row.argtypes] = {
         id: row.id,
         definition: row.definition,
         owner: row.owner,
@@ -456,20 +460,20 @@ export async function retrieveFunctions(client: ClientBase, config: Config) {
         client,
         row.nspname,
         row.proname,
-        row.argtypes
+        row.argtypes,
       );
 
       privileges.rows
         .filter(
           (row) =>
-            config.roles.length <= 0 || config.roles.includes(row.usename)
+            config.roles.length <= 0 || config.roles.includes(row.usename),
         )
         .forEach((privilege) => {
           def.privileges[privilege.usename] = {
             execute: privilege.execute,
           };
         });
-    })
+    }),
   );
   return { map: result, list };
 }
@@ -479,13 +483,13 @@ export async function retrieveAggregates(client: ClientBase, config: Config) {
   const { rows } = await getAggregates(
     client,
     config.schemas,
-    await getServerVersion(client)
+    await getServerVersion(client),
   );
   await Promise.all(
     rows.map(async (row) => {
       const fullName = `"${row.nspname}"."${row.proname}"`;
       const map = (result[fullName] ??= {});
-      const def = (map[row.argtypes] = {
+      const def: AggregateDefinition = (map[row.argtypes] = {
         id: row.id,
         definition: row.definition,
         returnTypeId: row.returnTypeId,
@@ -505,20 +509,20 @@ export async function retrieveAggregates(client: ClientBase, config: Config) {
         client,
         row.nspname,
         row.proname,
-        row.argtypes
+        row.argtypes,
       );
 
       privileges.rows
         .filter(
           (row) =>
-            config.roles.length <= 0 || config.roles.includes(row.usename)
+            config.roles.length <= 0 || config.roles.includes(row.usename),
         )
-        .forEach((privilege: any) => {
+        .forEach((privilege) => {
           def.privileges[privilege.usename] = {
             execute: privilege.execute,
           };
         });
-    })
+    }),
   );
 
   return result;
@@ -530,13 +534,13 @@ export async function retrieveSequences(client: ClientBase, config: Config) {
   const sequences = await getSequences(
     client,
     config.schemas,
-    await getServerVersion(client)
+    await getServerVersion(client),
   );
 
   await Promise.all(
     sequences.rows.map(async (sequence) => {
       const fullSequenceName = `"${sequence.seq_nspname}"."${sequence.seq_name}"`;
-      const def = (result[fullSequenceName] = {
+      const def: Sequence = (result[fullSequenceName] = {
         id: sequence.id,
         owner: sequence.owner,
         startValue: sequence.start_value,
@@ -559,7 +563,7 @@ export async function retrieveSequences(client: ClientBase, config: Config) {
         client,
         sequence.seq_nspname,
         sequence.seq_name,
-        await getServerVersion(client)
+        await getServerVersion(client),
       );
 
       privileges.rows.forEach((privilege) => {
@@ -577,7 +581,7 @@ export async function retrieveSequences(client: ClientBase, config: Config) {
           };
         }
       });
-    })
+    }),
   );
   return result;
 }
@@ -590,7 +594,7 @@ export async function retrieveTypes(client: ClientBase, config: Config) {
   await Promise.all(
     rows.map(async (row) => {
       const fullName = `"${row.schema}"."${row.name}"`;
-      const def = (result[fullName] = {
+      const def: Type = (result[fullName] = {
         id: row.id,
         fullName,
         schema: row.schema,
@@ -603,7 +607,7 @@ export async function retrieveTypes(client: ClientBase, config: Config) {
       for (const col of await typeColumns(client, def.schema, def.name)) {
         def.columns[`"${col.name}"`] = col;
       }
-    })
+    }),
   );
   return result;
 }
@@ -631,7 +635,7 @@ export async function retrieveDomains(client: ClientBase, config: Config) {
         constraintName: row.constraintName,
       });
       return def;
-    })
+    }),
   );
   return result;
 }

@@ -1,9 +1,12 @@
 import { ColumnChanges } from '../../compare/utils';
-import { Sql, dependency, join, stmt } from '../../stmt';
+import { Sql, dependency, join, stmt } from '../stmt';
 import { Column } from '../../catalog/database-objects';
 import { hints } from './misc';
 
 export function generateColumnDataTypeDefinition(schema: ColumnChanges) {
+  if (!schema.datatype || !schema.dataTypeID) {
+    return null;
+  }
   if (schema.precision) {
     const dataTypeScale = schema.scale ? `,${schema.scale}` : '';
     return stmt`${dependency(schema.datatype, schema.dataTypeID)}(${
@@ -16,11 +19,11 @@ export function generateColumnDataTypeDefinition(schema: ColumnChanges) {
 export function generateColumnDefinition(schema: Column) {
   let nullableExpression = schema.nullable ? 'NULL' : 'NOT NULL';
 
-  let defaultValue: Sql;
+  let defaultValue: Sql | null = null;
   if (schema.default)
     defaultValue = stmt`DEFAULT ${dependency(
       schema.default,
-      schema.defaultRefs
+      schema.defaultRefs,
     )}`;
 
   let identityValue = '';
@@ -31,7 +34,7 @@ export function generateColumnDefinition(schema: Column) {
     nullableExpression = '';
     defaultValue = stmt`GENERATED ALWAYS AS ${dependency(
       schema.default,
-      schema.defaultRefs
+      schema.defaultRefs,
     )} STORED`;
     identityValue = '';
   }
@@ -42,7 +45,7 @@ export function generateColumnDefinition(schema: Column) {
 
 export function generateAddTableColumnScript(table: string, column: Column) {
   const script = stmt`ALTER TABLE IF EXISTS ${table} ADD COLUMN IF NOT EXISTS ${generateColumnDefinition(
-    column
+    column,
   )};`;
   if (!column.nullable && !column.default) {
     return stmt`${script} ${hints.addColumnNotNullableWithoutDefaultValue}`;
@@ -53,29 +56,29 @@ export function generateAddTableColumnScript(table: string, column: Column) {
 export function generateChangeTableColumnScript(
   table: string,
   column: string,
-  changes: ColumnChanges
+  changes: ColumnChanges,
 ) {
   let definitions: Sql[] = [];
   if (changes['nullable'] !== undefined)
     definitions.push(
       stmt`ALTER COLUMN ${column} ${
         changes.nullable ? 'DROP NOT NULL' : 'SET NOT NULL'
-      }`
+      }`,
     );
 
   if (changes.datatype) {
     definitions.push(stmt`${hints.changeColumnDataType}`);
     let dataTypeDefinition = generateColumnDataTypeDefinition(changes);
     definitions.push(
-      stmt`ALTER COLUMN ${column} SET DATA TYPE ${dataTypeDefinition} USING ${column}::${dataTypeDefinition}`
+      stmt`ALTER COLUMN ${column} SET DATA TYPE ${dataTypeDefinition} USING ${column}::${dataTypeDefinition}`,
     );
   }
 
-  if (changes['default'] !== undefined) {
+  if (changes['default'] !== undefined && changes.defaultRefs) {
     definitions.push(
       stmt`ALTER COLUMN ${column} ${
         changes.default ? 'SET' : 'DROP'
-      } DEFAULT ${dependency(changes.default, changes.defaultRefs)}`
+      } DEFAULT ${dependency(changes.default, changes.defaultRefs)}`,
     );
   }
 
@@ -105,7 +108,7 @@ export function generateChangeTableColumnScript(
 export function generateDropTableColumnScript(
   table: string,
   column: string,
-  withoutHint = false
+  withoutHint = false,
 ) {
   return stmt`ALTER TABLE IF EXISTS ${table} DROP COLUMN IF EXISTS ${column} CASCADE;${
     withoutHint ? '' : hints.dropColumn

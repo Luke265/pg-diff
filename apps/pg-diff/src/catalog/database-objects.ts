@@ -1,4 +1,4 @@
-import { SqlRef } from '../stmt';
+import { SqlRef } from '../compare/stmt';
 
 export interface FunctionDefinition {
   id: number;
@@ -59,7 +59,7 @@ export interface ViewDefinition {
   owner: string;
   privileges: Record<string, Privileges>;
   dependencies: ViewDependency[];
-  comment: string;
+  comment: string | null;
 }
 export interface Schema {
   id: number;

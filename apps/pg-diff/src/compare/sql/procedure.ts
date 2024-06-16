@@ -1,4 +1,4 @@
-import { declaration, stmt } from '../../stmt';
+import { declaration, stmt } from '../stmt';
 import { FunctionDefinition } from '../../catalog/database-objects';
 import { hints } from './misc';
 
@@ -9,7 +9,7 @@ const PROCEDURE_TYPE = {
 
 export function generateProcedureGrantsDefinition(
   schema: FunctionDefinition,
-  role: string
+  role: string,
 ) {
   if (schema.privileges.execute) {
     return [
@@ -44,7 +44,7 @@ export function generateDropProcedureScript(schema: FunctionDefinition) {
 
 export function generateProcedureRoleGrantsScript(
   schema: FunctionDefinition,
-  role: string
+  role: string,
 ) {
   return stmt`${generateProcedureGrantsDefinition(schema, role).join('\n')}`;
 }
@@ -52,9 +52,9 @@ export function generateProcedureRoleGrantsScript(
 export function generateChangesProcedureRoleGrantsScript(
   schema: FunctionDefinition,
   role: string,
-  changes: { execute: boolean | null }
+  changes: { execute?: boolean },
 ) {
-  if (changes.execute === null) {
+  if (changes.execute === undefined) {
     return null;
   }
   return stmt`${changes.execute ? 'GRANT' : 'REVOKE'} EXECUTE ON ${
@@ -68,7 +68,7 @@ export function generateChangeProcedureOwnerScript(
   procedure: string,
   argTypes: string,
   owner: string,
-  type: 'p' | 'f'
+  type: 'p' | 'f',
 ) {
   return stmt`ALTER ${PROCEDURE_TYPE[type]} ${procedure}(${argTypes}) OWNER TO ${owner};`;
 }

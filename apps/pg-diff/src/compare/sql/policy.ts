@@ -1,4 +1,4 @@
-import { dependency, stmt } from '../../stmt';
+import { dependency, stmt } from '../stmt';
 import { Policy } from '../../catalog/database-objects';
 
 const POLICY_FOR = {
@@ -20,7 +20,7 @@ export function createPolicy(schema: string, table: string, policy: Policy) {
     ON ${dependency(
       `"${schema}"."${table}"`,
       policy.relid,
-      policy.dependencies
+      policy.dependencies,
     )}
     AS ${policy.permissive ? 'PERMISSIVE' : 'RESTRICTIVE'}
     FOR ${POLICY_FOR[policy.for]}

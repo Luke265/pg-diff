@@ -1,4 +1,5 @@
 export interface Column {
+  name: string;
   nullable: boolean;
   datatype: string;
   dataTypeCategory: string;
@@ -6,16 +7,8 @@ export interface Column {
   precision: number | null;
   scale: number | null;
 }
-export interface Columns {
-  version: Column;
-  name: Column;
-  status: Column;
-  last_message: Column;
-  script: Column;
-  applied_on: Column;
-}
 export interface MigrationHistoryTableSchema {
-  columns: Columns;
+  columns: Record<string, Column>;
   constraints: Record<string, unknown>;
   indexes: Record<string, unknown>;
   privileges: Record<string, unknown>;
@@ -24,6 +17,7 @@ export interface MigrationHistoryTableSchema {
 export const migrationHistoryTableSchema: MigrationHistoryTableSchema = {
   columns: {
     version: {
+      name: 'version',
       nullable: false,
       datatype: 'varchar',
       dataTypeCategory: 'S',
@@ -32,6 +26,7 @@ export const migrationHistoryTableSchema: MigrationHistoryTableSchema = {
       scale: null,
     },
     name: {
+      name: 'name',
       nullable: false,
       datatype: 'varchar',
       dataTypeCategory: 'S',
@@ -40,6 +35,7 @@ export const migrationHistoryTableSchema: MigrationHistoryTableSchema = {
       scale: null,
     },
     status: {
+      name: 'status',
       nullable: false,
       datatype: 'varchar',
       dataTypeCategory: 'S',
@@ -48,6 +44,7 @@ export const migrationHistoryTableSchema: MigrationHistoryTableSchema = {
       scale: null,
     },
     last_message: {
+      name: 'last_message',
       nullable: true,
       datatype: 'varchar',
       dataTypeCategory: 'S',
@@ -56,6 +53,7 @@ export const migrationHistoryTableSchema: MigrationHistoryTableSchema = {
       scale: null,
     },
     script: {
+      name: 'script',
       nullable: false,
       datatype: 'varchar',
       dataTypeCategory: 'S',
@@ -64,6 +62,7 @@ export const migrationHistoryTableSchema: MigrationHistoryTableSchema = {
       scale: null,
     },
     applied_on: {
+      name: 'applied_on',
       nullable: true,
       datatype: 'timestamp',
       dataTypeCategory: 'D',

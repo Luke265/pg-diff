@@ -1,10 +1,10 @@
 import { ClientBase } from 'pg';
-import { ServerVersion } from './models/server-version';
-import { Config } from './models/config';
-import { Sql } from './stmt';
+import { ServerVersion } from './catalog/server-version';
+import { Sql } from './compare/stmt';
 import path from 'path';
 import fs from 'fs';
 import { execSync } from 'child_process';
+import { Config } from './config';
 
 export function sortByDependencies(items: Sql[]): Sql[] {
   // Create a map of declarations to items
@@ -17,7 +17,7 @@ export function sortByDependencies(items: Sql[]): Sql[] {
 
   // Initialize the in-degree map and adjacency list
   const inDegree = new Map<Sql, number>();
-  const adjList = new Map();
+  const adjList = new Map<Sql, Sql[]>();
   items.forEach((item) => {
     inDegree.set(item, 0);
     adjList.set(item, []);
@@ -28,8 +28,8 @@ export function sortByDependencies(items: Sql[]): Sql[] {
     item.dependencies.forEach((dep) => {
       const depItem = declarationMap.get(dep);
       if (depItem) {
-        adjList.get(depItem).push(item);
-        inDegree.set(item, inDegree.get(item) + 1);
+        adjList.get(depItem)!!.push(item);
+        inDegree.set(item, inDegree.get(item)!! + 1);
       }
     });
   });
@@ -47,11 +47,14 @@ export function sortByDependencies(items: Sql[]): Sql[] {
 
   while (queue.length > 0) {
     const item = queue.shift();
+    if (!item) {
+      break;
+    }
     sorted.push(item);
 
     // Reduce the in-degree of dependent items
-    adjList.get(item).forEach((dependent) => {
-      inDegree.set(dependent, inDegree.get(dependent) - 1);
+    adjList.get(item)!!.forEach((dependent) => {
+      inDegree.set(dependent, inDegree.get(dependent)!! - 1);
       if (inDegree.get(dependent) === 0) {
         queue.push(dependent);
       }
@@ -67,14 +70,14 @@ export function sortByDependencies(items: Sql[]): Sql[] {
 }
 
 export async function getServerVersion(
-  client: ClientBase
+  client: ClientBase,
 ): Promise<ServerVersion> {
   const c = client as any;
   if (c._version) {
     return c._version;
   }
   const queryResult = await client.query<{ current_setting: string | null }>(
-    "SELECT current_setting('server_version')"
+    "SELECT current_setting('server_version')",
   );
   const version = queryResult.rows.at(0)?.current_setting;
   if (!version) {
@@ -87,7 +90,7 @@ export async function getServerVersion(
 export async function saveSqlScript(
   lines: Sql[],
   config: Config,
-  scriptName: string
+  scriptName: string,
 ) {
   if (lines.length <= 0) return null;
 
@@ -101,7 +104,7 @@ export async function saveSqlScript(
 
   const scriptPath = path.resolve(
     config.compareOptions.outputDirectory || '',
-    fileName
+    fileName,
   );
   if (config.compareOptions.getAuthorFromGit) {
     config.compareOptions.author = await getGitAuthor();
@@ -123,8 +126,8 @@ export async function saveSqlScript(
       file.write(`/******************${'*'.repeat(titleLength + 2)}***/\n`);
       file.write(
         `/*** SCRIPT AUTHOR: ${config.compareOptions.author.padEnd(
-          titleLength
-        )} ***/\n`
+          titleLength,
+        )} ***/\n`,
       );
       file.write(`/***    CREATED ON: ${datetime.padEnd(titleLength)} ***/\n`);
       file.write(`/******************${'*'.repeat(titleLength + 2)}***/\n`);

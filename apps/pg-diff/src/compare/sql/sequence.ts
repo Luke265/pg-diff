@@ -1,6 +1,7 @@
-import { stmt } from '../../stmt';
+import { stmt } from '../stmt';
 import { Sequence, SequencePrivileges } from '../../catalog/database-objects';
 import { hints } from './misc';
+import { SequenceChanges, buildGrants } from '../utils';
 
 export type SequenceProperties =
   | 'startValue'
@@ -14,30 +15,21 @@ export type SequenceProperties =
 export function generateSequenceGrantsDefinition(
   sequence: string,
   role: string,
-  privileges: SequencePrivileges
+  privileges: SequencePrivileges,
 ) {
-  const definitions: string[] = [];
-  if (privileges.select) {
-    definitions.push(
-      `GRANT SELECT ON SEQUENCE ${sequence} TO ${role};${hints.potentialRoleMissing}`
-    );
-  }
-  if (privileges.usage) {
-    definitions.push(
-      `GRANT USAGE ON SEQUENCE ${sequence} TO ${role};${hints.potentialRoleMissing}`
-    );
-  }
-  if (privileges.update) {
-    definitions.push(
-      `GRANT UPDATE ON SEQUENCE ${sequence} TO ${role};${hints.potentialRoleMissing}`
-    );
-  }
-  return definitions;
+  return buildGrants([
+    ['SELECT', privileges.select],
+    ['USAGE', privileges.usage],
+    ['UPDATE', privileges.update],
+  ]).map(
+    ([grant, privileges]) =>
+      `${grant} ${privileges} ON SEQUENCE ${sequence} TO ${role};${hints.potentialRoleMissing}`,
+  );
 }
 
 export function generateSetSequenceValueScript(
   tableName: string,
-  sequence: any
+  sequence: any,
 ) {
   return stmt`SELECT setval(pg_get_serial_sequence('${tableName}', '${sequence.attname}'), max("${sequence.attname}"), true) FROM ${tableName};`;
 }
@@ -66,60 +58,45 @@ function sequencePropertyMap(property: SequenceProperties, value: string) {
 export function generateChangeSequencePropertyScript(
   sequence: string,
   property: SequenceProperties,
-  value: string
+  value: string,
 ) {
   return stmt`ALTER SEQUENCE IF EXISTS ${sequence} ${sequencePropertyMap(
     property,
-    value
+    value,
   )};`;
 }
 
 export function generateChangesSequenceRoleGrantsScript(
   sequence: string,
   role: string,
-  changes: any
+  changes: SequenceChanges,
 ) {
-  let privileges: string[] = [];
-
-  if (Object.prototype.hasOwnProperty.call(changes, 'select'))
-    privileges.push(
-      `${changes.select ? 'GRANT' : 'REVOKE'} SELECT ON SEQUENCE ${sequence} ${
-        changes.select ? 'TO' : 'FROM'
-      } ${role};${hints.potentialRoleMissing}`
+  const privileges = [
+    [changes.select, 'SELECT'],
+    [changes.usage, 'USAGE'],
+    [changes.update, 'UPDATE'],
+  ]
+    .filter(([defined]) => defined !== undefined)
+    .map(
+      ([defined, type]) =>
+        `${defined ? 'GRANT' : 'REVOKE'} ${type} ON SEQUENCE ${sequence} ${
+          defined ? 'TO' : 'FROM'
+        } ${role};${hints.potentialRoleMissing}`,
     );
-
-  if (Object.prototype.hasOwnProperty.call(changes, 'usage'))
-    privileges.push(
-      `${changes.usage ? 'GRANT' : 'REVOKE'} USAGE ON SEQUENCE ${sequence} ${
-        changes.usage ? 'TO' : 'FROM'
-      } ${role};${hints.potentialRoleMissing}`
-    );
-
-  if (Object.prototype.hasOwnProperty.call(changes, 'update'))
-    privileges.push(
-      `${changes.update ? 'GRANT' : 'REVOKE'} UPDATE ON SEQUENCE ${sequence} ${
-        changes.update ? 'TO' : 'FROM'
-      } ${role};${hints.potentialRoleMissing}`
-    );
-
   return stmt`${privileges.join('\n')}`;
 }
 
 export function generateSequenceRoleGrantsScript(
   sequence: string,
   role: string,
-  privileges: any
+  privileges: SequencePrivileges,
 ) {
-  return stmt`${generateSequenceGrantsDefinition(
-    sequence,
-    role,
-    privileges
-  ).join('\n')}`;
+  return stmt`${generateSequenceGrantsDefinition(sequence, role, privileges).join('\n')}`;
 }
 
 export function generateCreateSequenceScript(
   sequence: Sequence,
-  owner: string
+  owner: string,
 ) {
   //Generate privileges script
   const fullName = `"${sequence.schema}"."${sequence.name}"`;
@@ -132,8 +109,8 @@ export function generateCreateSequenceScript(
       generateSequenceGrantsDefinition(
         fullName,
         role,
-        sequence.privileges[role]
-      )
+        sequence.privileges[role],
+      ),
     );
   }
 
@@ -150,7 +127,7 @@ export function generateCreateSequenceScript(
 
 export function generateRenameSequenceScript(
   old_name: string,
-  new_name: string
+  new_name: string,
 ) {
   return stmt`ALTER SEQUENCE IF EXISTS ${old_name} RENAME TO ${new_name};`;
 }

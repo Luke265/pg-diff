@@ -1,4 +1,4 @@
-import { stmt } from '../../stmt';
+import { stmt } from '../stmt';
 import { AggregateDefinition } from '../../catalog/database-objects';
 import { generateProcedureGrantsDefinition } from './procedure';
 
@@ -24,7 +24,7 @@ export function generateChangeAggregateScript(schema: AggregateDefinition) {
 
 export function generateDropAggregateScript(
   aggregate: string,
-  aggregateArgs: string
+  aggregateArgs: string,
 ) {
   return stmt`DROP AGGREGATE IF EXISTS ${aggregate}(${aggregateArgs});`;
 }
@@ -32,7 +32,7 @@ export function generateDropAggregateScript(
 export function generateChangeAggregateOwnerScript(
   aggregate: string,
   argTypes: string,
-  owner: string
+  owner: string,
 ) {
   return stmt`ALTER AGGREGATE ${aggregate}(${argTypes}) OWNER TO ${owner};`;
 }

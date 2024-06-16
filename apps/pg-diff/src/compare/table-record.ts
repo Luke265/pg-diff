@@ -1,10 +1,9 @@
 import { ClientBase } from 'pg';
 import { DatabaseObjects } from '../catalog/database-objects';
-import { TableDefinition } from '../models/table-definition';
+import { TableDefinition } from './table-definition';
 import EventEmitter from 'events';
-import { Config } from '../models/config';
-import { Sql, stmt } from '../stmt';
-import { TableData } from '../models/table-data';
+import { Sql, stmt } from './stmt';
+import { TableData } from './table-data';
 import { getServerVersion } from '../utils';
 import { isEqual } from 'lodash';
 import { generateSetSequenceValueScript } from './sql/sequence';
@@ -13,6 +12,7 @@ import {
   generateDeleteTableRecordScript,
   generateUpdateTableRecordScript,
 } from './sql/table-record';
+import { Config } from '../config';
 
 export async function compareTablesRecords(
   config: Config,
@@ -22,12 +22,12 @@ export async function compareTablesRecords(
   addedTables: string[],
   dbSourceObjects: DatabaseObjects,
   dbTargetObjects: DatabaseObjects,
-  eventEmitter: EventEmitter
+  eventEmitter: EventEmitter,
 ) {
   const lines: Sql[] = [];
   let iteratorCounter = 0;
   let progressStepSize = Math.floor(
-    20 / config.compareOptions.dataCompare.tables.length
+    20 / config.compareOptions.dataCompare.tables.length,
   );
 
   for (let tableDefinition of config.compareOptions.dataCompare.tables) {
@@ -38,7 +38,7 @@ export async function compareTablesRecords(
 
     if (!(await checkIfTableExists(sourceClient, tableDefinition))) {
       lines.push(
-        stmt`\n--ERROR: Table ${fullTableName} not found on SOURCE database for comparison!\n`
+        stmt`\n--ERROR: Table ${fullTableName} not found on SOURCE database for comparison!\n`,
       );
     } else {
       let tableData: TableData = {
@@ -60,11 +60,11 @@ export async function compareTablesRecords(
       tableData.sourceData.records = await collectTableRecords(
         sourceClient,
         tableDefinition,
-        dbSourceObjects
+        dbSourceObjects,
       );
       tableData.sourceData.sequences = await collectTableSequences(
         sourceClient,
-        tableDefinition
+        tableDefinition,
       );
 
       let isNewTable = false;
@@ -77,21 +77,21 @@ export async function compareTablesRecords(
         lines.push(
           stmt`\n--ERROR: Table "${tableDefinition.tableSchema || 'public'}"."${
             tableDefinition.tableName
-          }" not found on TARGET database for comparison!\n`
+          }" not found on TARGET database for comparison!\n`,
         );
       } else {
         tableData.targetData.records = await collectTableRecords(
           targetClient,
           tableDefinition,
           dbTargetObjects,
-          isNewTable
+          isNewTable,
         );
         //  tableData.targetData.sequences = await collectTableSequences(targetClient, tableDefinition);
 
         let compareResult = compareTableRecords(
           tableDefinition,
           tableData,
-          addedColumns
+          addedColumns,
         );
         lines.push(...compareResult.lines);
         differentRecords = lines.length;
@@ -106,7 +106,7 @@ export async function compareTablesRecords(
     eventEmitter.emit(
       'compare',
       `Records for table ${fullTableName} have been compared with ${differentRecords} differences`,
-      70 + progressStepSize * iteratorCounter
+      70 + progressStepSize * iteratorCounter,
     );
   }
 
@@ -117,7 +117,7 @@ export async function collectTableRecords(
   client: ClientBase,
   tableDefinition: TableDefinition,
   dbObjects: DatabaseObjects,
-  isNewTable?: boolean
+  isNewTable?: boolean,
 ) {
   let result: any = {
     fields: [],
@@ -141,13 +141,13 @@ export async function collectTableRecords(
 
     if (missingKeyColumns)
       throw new Error(
-        `The table [${fullTableName}] doesn't contains the field [${misssingKeyField}]`
+        `The table [${fullTableName}] doesn't contains the field [${misssingKeyField}]`,
       );
 
     let response = await client.query(
       `SELECT MD5(ROW(${tableDefinition.tableKeyFields
         .map((c) => `"${c}"`)
-        .join(',')})::text) AS "rowHash", * FROM ${fullTableName}`
+        .join(',')})::text) AS "rowHash", * FROM ${fullTableName}`,
     );
 
     for (const field of response.fields) {
@@ -170,12 +170,12 @@ export async function collectTableRecords(
 
 async function checkIfTableExists(
   client: ClientBase,
-  tableDefinition: TableDefinition
+  tableDefinition: TableDefinition,
 ) {
   let response = await client.query(
     `SELECT EXISTS (SELECT 1 FROM pg_tables WHERE tablename = '${
       tableDefinition.tableName
-    }' AND schemaname = '${tableDefinition.tableSchema || 'public'}')`
+    }' AND schemaname = '${tableDefinition.tableSchema || 'public'}')`,
   );
 
   return !!response.rows[0].exists;
@@ -183,7 +183,7 @@ async function checkIfTableExists(
 
 async function collectTableSequences(
   client: ClientBase,
-  tableDefinition: TableDefinition
+  tableDefinition: TableDefinition,
 ) {
   let identityFeature = `
         CASE 
@@ -216,7 +216,7 @@ async function collectTableSequences(
 function compareTableRecords(
   tableDefinition: TableDefinition,
   tableData: TableData,
-  addedColumns: any
+  addedColumns: any,
 ) {
   let ignoredRowHash: string[] = [];
   let result: { lines: Sql[]; isSequenceRebaseNeeded: boolean } = {
@@ -229,7 +229,7 @@ function compareTableRecords(
 
   //Check if at least one sequence is for an ALWAYS IDENTITY in case the OVERRIDING SYSTEM VALUE must be issued
   let isIdentityValuesAllowed = !tableData.sourceData.sequences.some(
-    (sequence) => sequence.identitytype === 'ALWAYS'
+    (sequence) => sequence.identitytype === 'ALWAYS',
   );
 
   tableData.sourceData.records.rows.forEach((record, index) => {
@@ -241,14 +241,14 @@ function compareTableRecords(
     //Check if record is duplicated in source
     if (
       tableData.sourceData.records.rows.some(
-        (r, idx) => r.rowHash === record.rowHash && idx > index
+        (r, idx) => r.rowHash === record.rowHash && idx > index,
       )
     ) {
       ignoredRowHash.push(record.rowHash);
       result.lines.push(
         stmt`\n--ERROR: Too many record found in SOURCE database for table ${fullTableName} and key fields ${JSON.stringify(
-          keyFieldsMap
-        )} !\n`
+          keyFieldsMap,
+        )} !\n`,
       );
       return;
     }
@@ -263,8 +263,8 @@ function compareTableRecords(
       ignoredRowHash.push(record.rowHash);
       result.lines.push(
         stmt`\n--ERROR: Too many record found in TARGET database for table ${fullTableName} and key fields ${JSON.stringify(
-          keyFieldsMap
-        )} !\n`
+          keyFieldsMap,
+        )} !\n`,
       );
       return;
     }
@@ -280,8 +280,8 @@ function compareTableRecords(
           fullTableName,
           record,
           tableData.sourceData.records.fields,
-          isIdentityValuesAllowed
-        )
+          isIdentityValuesAllowed,
+        ),
       );
       result.isSequenceRebaseNeeded = true;
     } else {
@@ -292,7 +292,7 @@ function compareTableRecords(
         tableData.sourceData.records.fields,
         record,
         targetRecord[0],
-        addedColumns
+        addedColumns,
       );
       if (fieldCompareResult.isSequenceRebaseNeeded)
         result.isSequenceRebaseNeeded = true;
@@ -308,14 +308,14 @@ function compareTableRecords(
 
     if (
       tableData.targetData.records.rows.some(
-        (r, idx) => r.rowHash === record.rowHash && idx > index
+        (r, idx) => r.rowHash === record.rowHash && idx > index,
       )
     ) {
       ignoredRowHash.push(record.rowHash);
       result.lines.push(
         stmt`\n--ERROR: Too many record found in TARGET database for table ${fullTableName} and key fields ${JSON.stringify(
-          keyFieldsMap
-        )} !\n`
+          keyFieldsMap,
+        )} !\n`,
       );
       return;
     }
@@ -325,8 +325,8 @@ function compareTableRecords(
       generateDeleteTableRecordScript(
         fullTableName,
         tableData.sourceData.records.fields,
-        keyFieldsMap
-      )
+        keyFieldsMap,
+      ),
     );
     result.isSequenceRebaseNeeded = true;
   });
@@ -336,7 +336,7 @@ function compareTableRecords(
 
 function rebaseSequences(
   tableDefinition: TableDefinition,
-  tableData: TableData
+  tableData: TableData,
 ) {
   const lines: Sql[] = [];
   const fullTableName = `"${tableDefinition.tableSchema || 'public'}"."${
@@ -355,7 +355,7 @@ function compareTableRecordFields(
   fields: any[],
   sourceRecord: any,
   targetRecord: any,
-  addedColumns: any
+  addedColumns: any,
 ) {
   let changes: any = {};
   let result: { lines: Sql[]; isSequenceRebaseNeeded: boolean } = {
@@ -382,7 +382,7 @@ function compareTableRecordFields(
   if (Object.keys(changes).length > 0) {
     result.isSequenceRebaseNeeded = true;
     result.lines.push(
-      generateUpdateTableRecordScript(table, fields, keyFieldsMap, changes)
+      generateUpdateTableRecordScript(table, fields, keyFieldsMap, changes),
     );
   }
 
@@ -396,7 +396,11 @@ function getKeyFieldsMap(keyFields: string[], record: any) {
   return keyFieldsMap;
 }
 
-function checkIsNewColumn(addedColumns: any, table: string, field: string) {
+function checkIsNewColumn(
+  addedColumns: Record<string, string[]>,
+  table: string,
+  field: string,
+) {
   return !!addedColumns[table]?.some((column: any) => column == field);
 }
 

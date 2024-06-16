@@ -1,7 +1,7 @@
-export type RawValue = string | Sql | SqlRef | Declaration;
+export type RawValue = string | Sql | SqlRef | Declaration | null;
 export class Sql {
   readonly dependencies: (number | string)[] = [];
-  readonly declarations: number[] = [];
+  readonly declarations: (number | string)[] = [];
   readonly content: string;
   weight = 0;
 
@@ -14,7 +14,7 @@ export class Sql {
       throw new TypeError(
         `Expected ${rawStrings.length} strings to have ${
           rawStrings.length - 1
-        } values`
+        } values`,
       );
     }
     let i = 0;
@@ -50,15 +50,18 @@ export class Sql {
 
 export class SqlRef {
   constructor(
-    public readonly value: string | Sql,
-    public readonly dependencies: (number | string)[]
+    public readonly value: string | Sql | null,
+    public readonly dependencies: (number | string)[],
   ) {}
   toString() {
     return this.value;
   }
 }
 class Declaration {
-  constructor(public readonly id: number, public readonly value: RawValue) {}
+  constructor(
+    public readonly id: number,
+    public readonly value: RawValue,
+  ) {}
   toString() {
     return this.value;
   }
@@ -76,20 +79,23 @@ export function join(strings: readonly Sql[], separator: string) {
   }
   return new Sql(
     ['', ...Array(strings.length - 1).fill(separator), ''],
-    strings
+    strings,
   );
 }
 
-export function dependency(value: string | Sql, ids: number | string): SqlRef;
 export function dependency(
-  value: string | Sql,
-  ids: (number | string)[]
+  value: string | Sql | null,
+  ids: number | string,
 ): SqlRef;
 export function dependency(
-  value: string | Sql,
+  value: string | Sql | null,
+  ids: (number | string)[],
+): SqlRef;
+export function dependency(
+  value: string | Sql | null,
   ...ids: (number | string | (number | string)[])[]
 ): SqlRef;
-export function dependency(value: string | Sql, ...ids: any) {
+export function dependency(value: string | Sql | null, ...ids: any) {
   return new SqlRef(value, ids.flat());
 }
 

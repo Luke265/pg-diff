@@ -1,7 +1,7 @@
 import { ClientBase } from 'pg';
-import { core } from '../core';
-import { ServerVersion } from '../models/server-version';
+import { ServerVersion } from './server-version';
 import { DataTypeCategory } from './database-objects';
+import { checkServerCompatibility } from './utils';
 
 export async function getAllSchemaNames(client: ClientBase) {
   //TODO: Instead of using ::regrole casting, for better performance join with pg_roles
@@ -73,7 +73,7 @@ FROM
   JOIN pg_roles r ON r.oid = t.typowner
 WHERE
 (t.typtype = 'e' OR c.relkind = 'c') AND n.nspname IN ('${schemas.join(
-    "','"
+    "','",
   )}')`);
 }
 export interface DomainRow {
@@ -114,7 +114,7 @@ WHERE
 export function getTableOptions(
   client: ClientBase,
   schemaName: string,
-  tableName: string
+  tableName: string,
 ) {
   return client.query<{ relhasoids: string }>(`SELECT relhasoids 
                   FROM pg_class c
@@ -141,7 +141,7 @@ export function getTableColumns(
   client: ClientBase,
   schemaName: string,
   tableName: string,
-  serverVersion: ServerVersion
+  serverVersion: ServerVersion,
 ) {
   return client.query<TableColumnRow>(
     `SELECT 
@@ -155,12 +155,12 @@ export function getTableColumns(
         pg_get_expr(ad.adbin ,ad.adrelid ) as adsrc, 
         ad.adbin,
                   ${
-                    core.checkServerCompatibility(serverVersion, 10, 0)
+                    checkServerCompatibility(serverVersion, 10, 0)
                       ? 'a.attidentity'
                       : 'NULL as attidentity'
                   },
                   ${
-                    core.checkServerCompatibility(serverVersion, 12, 0)
+                    checkServerCompatibility(serverVersion, 12, 0)
                       ? 'a.attgenerated'
                       : 'NULL as attgenerated'
                   },
@@ -182,7 +182,7 @@ export function getTableColumns(
                   INNER JOIN pg_class c ON c.relname = '${tableName}' AND c.relnamespace = n."oid"
                   LEFT JOIN pg_description d ON d.objoid = c."oid" AND d.objsubid = a.attnum
                   WHERE attrelid = c."oid" AND attnum > 0 AND attisdropped = false
-                  ORDER BY a.attnum ASC`
+                  ORDER BY a.attnum ASC`,
   );
 }
 export interface ContraintRow {
@@ -198,7 +198,7 @@ export interface ContraintRow {
 export function getTableConstraints(
   client: ClientBase,
   schemaName: string,
-  tableName: string
+  tableName: string,
 ) {
   return client.query<ContraintRow>(`SELECT c.oid AS id, c.confrelid AS relid, c.conname, c.contype, f_sch.nspname AS foreign_schema, f_tbl.relname AS foreign_table, 
                   pg_get_constraintdef(c.oid) as definition, d.description AS comment
@@ -220,7 +220,7 @@ export interface IndexRow {
 export function getTableIndexes(
   client: ClientBase,
   schemaName: string,
-  tableName: string
+  tableName: string,
 ) {
   return client.query<IndexRow>(`SELECT CONCAT(i.indexrelid, '-', i.indrelid) AS id, i.indexrelid AS relid, idx.relname as indexname, pg_get_indexdef(idx.oid) AS indexdef, d.description AS comment
                   FROM pg_index i
@@ -245,7 +245,7 @@ export interface PrivilegeRow {
 export function getTablePrivileges(
   client: ClientBase,
   schemaName: string,
-  tableName: string
+  tableName: string,
 ) {
   return client.query<PrivilegeRow>(`SELECT t.schemaname, t.tablename, u.usename, 
                   HAS_TABLE_PRIVILEGE(u.usename,'"${schemaName}"."${tableName}"', 'SELECT') as select,
@@ -294,7 +294,7 @@ export interface ViewPrivilegeRow {
 export function getViewPrivileges(
   client: ClientBase,
   schemaName: string,
-  viewName: string
+  viewName: string,
 ) {
   return client.query<ViewPrivilegeRow>(`SELECT v.schemaname, v.viewname, u.usename, 
                   HAS_TABLE_PRIVILEGE(u.usename,'"${schemaName}"."${viewName}"', 'SELECT') as select,
@@ -338,7 +338,7 @@ export interface MaterializedViewPrivilegeRow {
 export function getMaterializedViewPrivileges(
   client: ClientBase,
   schemaName: string,
-  viewName: string
+  viewName: string,
 ) {
   return client.query<MaterializedViewPrivilegeRow>(`SELECT v.schemaname, v.matviewname, u.usename, 
                   HAS_TABLE_PRIVILEGE(u.usename,'"${schemaName}"."${viewName}"', 'SELECT') as select,
@@ -359,7 +359,7 @@ export interface ViewDependencyRow {
 export function getViewDependencies(
   client: ClientBase,
   schemaName: string,
-  viewName: string
+  viewName: string,
 ) {
   return client.query<ViewDependencyRow>(`SELECT                 
                   n.nspname AS schemaname,
@@ -393,7 +393,7 @@ export interface FunctionRow {
 export function getFunctions(
   client: ClientBase,
   schemas: string[],
-  serverVersion: ServerVersion
+  serverVersion: ServerVersion,
 ) {
   //TODO: Instead of using ::regrole casting, for better performance join with pg_roles
   return client.query<FunctionRow>(`SELECT p.oid AS id, 
@@ -413,10 +413,10 @@ export function getFunctions(
                   LEFT JOIN pg_type t ON t.oid = p.prorettype
                   LEFT JOIN pg_description d ON d.objoid = p."oid" AND d.objsubid = 0
                   WHERE n.nspname IN ('${schemas.join(
-                    "','"
+                    "','",
                   )}') AND p.probin IS NULL 
                   ${
-                    core.checkServerCompatibility(serverVersion, 11, 0)
+                    checkServerCompatibility(serverVersion, 11, 0)
                       ? "AND p.prokind IN ('f','p')"
                       : 'AND p.proisagg = false AND p.proiswindow = false'
                   } 
@@ -441,7 +441,7 @@ export interface AggregateRow {
 export function getAggregates(
   client: ClientBase,
   schemas: string[],
-  serverVersion: ServerVersion
+  serverVersion: ServerVersion,
 ) {
   //TODO: Instead of using ::regrole casting, for better performance join with pg_roles
   return client.query<AggregateRow>(`SELECT 
@@ -460,7 +460,7 @@ export function getAggregates(
                           , CASE a.aggfinalfn WHEN '-'::regproc THEN NULL ELSE format(E'\\tFINALFUNC = %s',a.aggfinalfn::text) END	     
                           , CASE WHEN a.aggfinalfn != '-'::regproc AND a.aggfinalextra = true THEN format(E'\\tFINALFUNC_EXTRA') ELSE NULL END
                           ${
-                            core.checkServerCompatibility(serverVersion, 11, 0)
+                            checkServerCompatibility(serverVersion, 11, 0)
                               ? `, CASE WHEN a.aggfinalfn != '-'::regproc THEN format(E'\\tFINALFUNC_MODIFY = %s', 
                               CASE 
                                    WHEN a.aggfinalmodify = 'r' THEN 'READ_ONLY'
@@ -488,7 +488,7 @@ export function getAggregates(
                           , CASE a.aggmfinalfn WHEN '-'::regproc THEN NULL ELSE format(E'\\tMFINALFUNC = %s',a.aggmfinalfn::text) END
                           , CASE WHEN a.aggmfinalfn != '-'::regproc and a.aggmfinalextra = true THEN format(E'\\tMFINALFUNC_EXTRA') ELSE NULL END
                           ${
-                            core.checkServerCompatibility(serverVersion, 11, 0)
+                            checkServerCompatibility(serverVersion, 11, 0)
                               ? `, CASE WHEN a.aggmfinalfn != '-'::regproc THEN format(E'\\tMFINALFUNC_MODIFY  = %s', 
                               CASE 
                                   WHEN a.aggmfinalmodify = 'r' THEN 'READ_ONLY'
@@ -515,7 +515,7 @@ export function getAggregates(
                   WHERE n.nspname IN ('${schemas.join("','")}')
                   AND a.aggkind = 'n'
                   ${
-                    core.checkServerCompatibility(serverVersion, 11, 0)
+                    checkServerCompatibility(serverVersion, 11, 0)
                       ? " AND p.prokind = 'a' "
                       : ' AND p.proisagg = true AND p.proiswindow = false '
                   } 
@@ -542,7 +542,7 @@ export interface PolicyRow {
 export function getTablePolicies(
   client: ClientBase,
   schema: string,
-  table: string
+  table: string,
 ) {
   //TODO: Instead of using ::regrole casting, for better performance join with pg_roles
   return client.query<PolicyRow>(`SELECT
@@ -582,7 +582,7 @@ export function getFunctionPrivileges(
   client: ClientBase,
   schemaName: string,
   functionName: string,
-  argTypes: string
+  argTypes: string,
 ) {
   return client.query<FunctionPrivilegeRow>(`SELECT n.nspname as pronamespace, p.proname, u.usename, 
                   HAS_FUNCTION_PRIVILEGE(u.usename,'"${schemaName}"."${functionName}"(${argTypes})','EXECUTE') as execute  
@@ -609,11 +609,11 @@ export interface SequenceRow {
 export function getSequences(
   client: ClientBase,
   schemas: string[],
-  serverVersion: ServerVersion
+  serverVersion: ServerVersion,
 ) {
   return client.query<SequenceRow>(`SELECT s.oid AS id, s.seq_nspname, s.seq_name, s.owner, s.ownedby_table, s.ownedby_column, p.start_value, p.minimum_value, p.maximum_value, p.increment, p.cycle_option, 
                   ${
-                    core.checkServerCompatibility(serverVersion, 10, 0)
+                    checkServerCompatibility(serverVersion, 10, 0)
                       ? 'p.cache_size'
                       : '1 as cache_size'
                   },
@@ -629,10 +629,10 @@ export function getSequences(
                       LEFT JOIN pg_class sc ON sc."oid" = d.refobjid
                       LEFT JOIN pg_description ds ON ds.objoid = c."oid" AND ds.objsubid = 0
                       WHERE c.relkind = 'S' AND ns.nspname IN ('${schemas.join(
-                        "','"
+                        "','",
                       )}') 
                       ${
-                        core.checkServerCompatibility(serverVersion, 10, 0)
+                        checkServerCompatibility(serverVersion, 10, 0)
                           ? "AND (a.attidentity IS NULL OR a.attidentity = '')"
                           : ''
                       }
@@ -653,10 +653,10 @@ export function getSequencePrivileges(
   client: ClientBase,
   schemaName: string,
   sequenceName: string,
-  serverVersion: ServerVersion
+  serverVersion: ServerVersion,
 ) {
   return client.query<SequencePrivilegeRow>(`SELECT s.sequence_schema, s.sequence_name, u.usename, ${
-    core.checkServerCompatibility(serverVersion, 10, 0)
+    checkServerCompatibility(serverVersion, 10, 0)
       ? 'NULL AS cache_value,'
       : 'p.cache_value,'
   }
@@ -664,7 +664,7 @@ export function getSequencePrivileges(
                   HAS_SEQUENCE_PRIVILEGE(u.usename,'"${schemaName}"."${sequenceName}"', 'USAGE') as usage,
                   HAS_SEQUENCE_PRIVILEGE(u.usename,'"${schemaName}"."${sequenceName}"', 'UPDATE') as update
                   FROM information_schema.sequences s, pg_user u ${
-                    core.checkServerCompatibility(serverVersion, 10, 0)
+                    checkServerCompatibility(serverVersion, 10, 0)
                       ? ''
                       : ', "' + schemaName + '"."' + sequenceName + '" p'
                   }

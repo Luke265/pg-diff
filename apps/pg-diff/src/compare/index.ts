@@ -1,4 +1,3 @@
-import { core } from '../core';
 import {
   AggregateDefinition,
   DatabaseObjects,
@@ -14,10 +13,9 @@ import {
 import objectType from '../enums/object-type';
 
 import EventEmitter from 'events';
-import { Config } from '../models/config';
-import { ClientBase } from 'pg';
+import { ClientBase, Client } from 'pg';
 import { getServerVersion } from '../utils';
-import { Sql } from '../stmt';
+import { Sql } from './stmt';
 import { ColumnChanges } from './utils';
 import { compareTypes } from './type';
 import { compareDomains } from './domain';
@@ -58,11 +56,20 @@ import {
 } from './sql/sequence';
 import { generateChangeTableOwnerScript } from './sql/table';
 import { generateDropViewScript, generateCreateViewScript } from './sql/view';
+import { Config } from '../config';
 
 export async function compare(config: Config, eventEmitter: EventEmitter) {
   eventEmitter.emit('compare', 'Compare started', 0);
   eventEmitter.emit('compare', 'Connecting to source database ...', 10);
-  const pgSourceClient = await core.makePgClient(config.sourceClient);
+  const pgSourceClient = new Client({
+    user: config.sourceClient.user,
+    host: config.sourceClient.host,
+    database: config.sourceClient.database,
+    password: config.sourceClient.password,
+    port: config.sourceClient.port,
+    application_name: config.sourceClient.applicationName,
+  });
+  await pgSourceClient.connect();
   eventEmitter.emit(
     'compare',
     `Connected to source PostgreSQL ${
@@ -70,11 +77,19 @@ export async function compare(config: Config, eventEmitter: EventEmitter) {
     } on [${config.sourceClient.host}:${config.sourceClient.port}/${
       config.sourceClient.database
     }] `,
-    11
+    11,
   );
 
   eventEmitter.emit('compare', 'Connecting to target database ...', 20);
-  const pgTargetClient = await core.makePgClient(config.targetClient);
+  const pgTargetClient = new Client({
+    user: config.targetClient.user,
+    host: config.targetClient.host,
+    database: config.targetClient.database,
+    password: config.targetClient.password,
+    port: config.targetClient.port,
+    application_name: config.targetClient.applicationName,
+  });
+  await pgTargetClient.connect();
   eventEmitter.emit(
     'compare',
     `Connected to target PostgreSQL ${
@@ -82,7 +97,7 @@ export async function compare(config: Config, eventEmitter: EventEmitter) {
     } on [${config.targetClient.host}:${config.targetClient.port}/${
       config.targetClient.database
     }] `,
-    21
+    21,
   );
 
   const dbSourceObjects = await collectDatabaseObject(pgSourceClient, config);
@@ -94,7 +109,7 @@ export async function compare(config: Config, eventEmitter: EventEmitter) {
     dbSourceObjects,
     dbTargetObjects,
     config,
-    eventEmitter
+    eventEmitter,
   );
 
   //The progress step size is 20
@@ -108,8 +123,8 @@ export async function compare(config: Config, eventEmitter: EventEmitter) {
         added.tables,
         dbSourceObjects,
         dbTargetObjects,
-        eventEmitter
-      ))
+        eventEmitter,
+      )),
     );
     eventEmitter.emit('compare', 'Table records have been compared', 95);
   }
@@ -119,7 +134,7 @@ export async function compare(config: Config, eventEmitter: EventEmitter) {
 
 export async function collectDatabaseObject(
   client: ClientBase,
-  config: Config
+  config: Config,
 ) {
   if (typeof config.compareOptions.schemaCompare.namespaces === 'string')
     config.compareOptions.schemaCompare.namespaces = [
@@ -130,9 +145,8 @@ export async function collectDatabaseObject(
     !Array.isArray(config.compareOptions.schemaCompare.namespaces) ||
     config.compareOptions.schemaCompare.namespaces.length <= 0
   )
-    config.compareOptions.schemaCompare.namespaces = await retrieveAllSchemas(
-      client
-    );
+    config.compareOptions.schemaCompare.namespaces =
+      await retrieveAllSchemas(client);
   return loadCatalog(client, {
     schemas: config.compareOptions.schemaCompare.namespaces,
     roles: config.compareOptions.schemaCompare.roles,
@@ -143,17 +157,17 @@ export function compareDatabaseObjects(
   dbSourceObjects: DatabaseObjects,
   dbTargetObjects: DatabaseObjects,
   config: Config,
-  eventEmitter: EventEmitter
+  eventEmitter: EventEmitter,
 ) {
   const droppedConstraints: string[] = [];
   const droppedIndexes: string[] = [];
   const droppedViews: string[] = [];
-  const addedColumns: Record<string, any> = {};
-  const addedTables: any[] = [];
-  const sqlPatch: Sql[] = [];
+  const addedColumns: Record<string, string[]> = {};
+  const addedTables: string[] = [];
+  const sqlPatch: (Sql | null)[] = [];
 
   sqlPatch.push(
-    ...compareSchemas(dbSourceObjects.schemas, dbTargetObjects.schemas)
+    ...compareSchemas(dbSourceObjects.schemas, dbTargetObjects.schemas),
   );
   eventEmitter.emit('compare', 'SCHEMA objects have been compared', 45);
 
@@ -162,8 +176,8 @@ export function compareDatabaseObjects(
       ...compareSequences(
         config,
         dbSourceObjects.sequences,
-        dbTargetObjects.sequences
-      )
+        dbTargetObjects.sequences,
+      ),
     );
     eventEmitter.emit('compare', 'SEQUENCE objects have been compared', 50);
   }
@@ -177,16 +191,16 @@ export function compareDatabaseObjects(
       droppedViews,
       addedColumns,
       addedTables,
-      config
-    )
+      config,
+    ),
   );
 
   sqlPatch.push(
-    ...compareTypes(dbSourceObjects.types, dbTargetObjects.types, config)
+    ...compareTypes(dbSourceObjects.types, dbTargetObjects.types, config),
   );
 
   sqlPatch.push(
-    ...compareDomains(dbSourceObjects.domains, dbTargetObjects.domains, config)
+    ...compareDomains(dbSourceObjects.domains, dbTargetObjects.domains, config),
   );
   eventEmitter.emit('compare', 'TABLE objects have been compared', 55);
 
@@ -195,8 +209,8 @@ export function compareDatabaseObjects(
       dbSourceObjects.views,
       dbTargetObjects.views,
       droppedViews,
-      config
-    )
+      config,
+    ),
   );
   eventEmitter.emit('compare', 'VIEW objects have been compared', 60);
 
@@ -206,21 +220,21 @@ export function compareDatabaseObjects(
       dbTargetObjects.materializedViews,
       droppedViews,
       droppedIndexes,
-      config
-    )
+      config,
+    ),
   );
   eventEmitter.emit(
     'compare',
     'MATERIALIZED VIEW objects have been compared',
-    65
+    65,
   );
 
   sqlPatch.push(
     ...compareProcedures(
       dbSourceObjects.functionMap,
       dbTargetObjects.functionMap,
-      config
-    )
+      config,
+    ),
   );
   eventEmitter.emit('compare', 'PROCEDURE objects have been compared', 70);
 
@@ -228,13 +242,13 @@ export function compareDatabaseObjects(
     ...compareAggregates(
       dbSourceObjects.aggregates,
       dbTargetObjects.aggregates,
-      config
-    )
+      config,
+    ),
   );
   eventEmitter.emit('compare', 'AGGREGATE objects have been compared', 75);
 
   sqlPatch.push(
-    ...comparePolicies(config, dbSourceObjects.tables, dbTargetObjects.tables)
+    ...comparePolicies(config, dbSourceObjects.tables, dbTargetObjects.tables),
   );
 
   return {
@@ -247,13 +261,13 @@ export function compareDatabaseObjects(
       columns: addedColumns,
       tables: addedTables,
     },
-    ddl: sqlPatch.filter((v) => !!v),
+    ddl: sqlPatch.filter((v): v is Sql => !!v),
   };
 }
 
 export function compareSchemas(
   sourceSchemas: Record<string, Schema>,
-  targetSchemas: Record<string, Schema>
+  targetSchemas: Record<string, Schema>,
 ) {
   const lines: Sql[] = [];
   for (const sourceSchema in sourceSchemas) {
@@ -268,8 +282,8 @@ export function compareSchemas(
           sourceObj.id,
           objectType.SCHEMA,
           sourceSchema,
-          sourceObj.comment
-        )
+          sourceObj.comment,
+        ),
       );
     }
 
@@ -279,8 +293,8 @@ export function compareSchemas(
           sourceObj.id,
           objectType.SCHEMA,
           sourceSchema,
-          sourceObj.comment
-        )
+          sourceObj.comment,
+        ),
       );
   }
 
@@ -290,7 +304,7 @@ export function compareSchemas(
 export function comparePolicies(
   config: Config,
   source: Record<string, TableObject>,
-  target: Record<string, TableObject>
+  target: Record<string, TableObject>,
 ) {
   const lines: Sql[][] = [];
   for (const name in source) {
@@ -300,7 +314,7 @@ export function comparePolicies(
       config,
       sourceObj,
       sourceObj.policies,
-      targetObj?.policies ?? {}
+      targetObj?.policies ?? {},
     );
     lines.push(policies);
   }
@@ -311,7 +325,7 @@ export function compareViews(
   sourceViews: Record<string, ViewDefinition>,
   targetViews: Record<string, ViewDefinition>,
   droppedViews: string[],
-  config: Config
+  config: Config,
 ) {
   const lines: Sql[] = [];
 
@@ -332,8 +346,8 @@ export function compareViews(
             sourceObj.id,
             objectType.VIEW,
             view,
-            sourceObj.comment
-          )
+            sourceObj.comment,
+          ),
         );
       } else {
         if (droppedViews.includes(view))
@@ -345,8 +359,8 @@ export function compareViews(
             view,
             sourceObj.privileges,
             targetObj.privileges,
-            config
-          )
+            config,
+          ),
         );
 
         if (sourceObj.owner != targetObj.owner)
@@ -358,8 +372,8 @@ export function compareViews(
               sourceObj.id,
               objectType.VIEW,
               view,
-              sourceObj.comment
-            )
+              sourceObj.comment,
+            ),
           );
       }
     } else {
@@ -370,8 +384,8 @@ export function compareViews(
           sourceObj.id,
           objectType.VIEW,
           view,
-          sourceObj.comment
-        )
+          sourceObj.comment,
+        ),
       );
     }
   }
@@ -393,7 +407,7 @@ export function compareMaterializedViews(
   targetMaterializedViews: Record<string, MaterializedViewDefinition>,
   droppedViews: string[],
   droppedIndexes: string[],
-  config: Config
+  config: Config,
 ) {
   const lines: Sql[] = [];
   for (let view in sourceMaterializedViews) {
@@ -413,8 +427,8 @@ export function compareMaterializedViews(
             sourceObj.id,
             objectType.MATERIALIZED_VIEW,
             view,
-            sourceObj.comment
-          )
+            sourceObj.comment,
+          ),
         );
       } else {
         if (droppedViews.includes(view))
@@ -425,8 +439,8 @@ export function compareMaterializedViews(
           ...compareTableIndexes(
             sourceObj.indexes,
             targetObj.indexes,
-            droppedIndexes
-          )
+            droppedIndexes,
+          ),
         );
 
         lines.push(
@@ -434,8 +448,8 @@ export function compareMaterializedViews(
             view,
             sourceObj.privileges,
             targetObj.privileges,
-            config
-          )
+            config,
+          ),
         );
 
         if (sourceObj.owner != targetObj.owner)
@@ -447,8 +461,8 @@ export function compareMaterializedViews(
               sourceObj.id,
               objectType.MATERIALIZED_VIEW,
               view,
-              sourceObj.comment
-            )
+              sourceObj.comment,
+            ),
           );
       }
     } else {
@@ -459,8 +473,8 @@ export function compareMaterializedViews(
           sourceObj.id,
           objectType.MATERIALIZED_VIEW,
           view,
-          sourceObj.comment
-        )
+          sourceObj.comment,
+        ),
       );
     }
   }
@@ -479,9 +493,9 @@ export function compareMaterializedViews(
 export function compareProcedures(
   sourceFunctions: Record<string, Record<string, FunctionDefinition>>,
   targetFunctions: Record<string, Record<string, FunctionDefinition>>,
-  config: Config
+  config: Config,
 ) {
-  const lines: Sql[] = [];
+  const lines: (Sql | null)[] = [];
 
   for (let procedure in sourceFunctions) {
     for (const procedureArgs in sourceFunctions[procedure]) {
@@ -498,11 +512,11 @@ export function compareProcedures(
         //      the problem is that a SQL STRING can contains special char as a fix from previous function version
         const sourceFunctionDefinition = sourceObj.definition.replace(
           /\r/g,
-          ''
+          '',
         );
         const targetFunctionDefinition = targetObj.definition.replace(
           /\r/g,
-          ''
+          '',
         );
         if (sourceFunctionDefinition !== targetFunctionDefinition) {
           if (sourceObj.argTypes !== targetObj.argTypes) {
@@ -515,8 +529,8 @@ export function compareProcedures(
                 sourceObj.id,
                 procedureType,
                 `${procedure}(${procedureArgs})`,
-                sourceObj.comment
-              )
+                sourceObj.comment,
+              ),
             );
           }
         } else {
@@ -524,8 +538,8 @@ export function compareProcedures(
             ...compareProcedurePrivileges(
               sourceObj,
               sourceObj.privileges,
-              targetObj.privileges
-            )
+              targetObj.privileges,
+            ),
           );
 
           if (sourceObj.owner != targetObj.owner)
@@ -534,8 +548,8 @@ export function compareProcedures(
                 procedure,
                 procedureArgs,
                 sourceObj.owner,
-                sourceObj.type
-              )
+                sourceObj.type,
+              ),
             );
 
           if (sourceObj.comment != sourceObj.comment)
@@ -544,8 +558,8 @@ export function compareProcedures(
                 sourceObj.id,
                 procedureType,
                 `${procedure}(${procedureArgs})`,
-                sourceObj.comment
-              )
+                sourceObj.comment,
+              ),
             );
         }
       } else {
@@ -557,8 +571,8 @@ export function compareProcedures(
               sourceObj.id,
               procedureType,
               `${procedure}(${procedureArgs})`,
-              sourceObj.comment
-            )
+              sourceObj.comment,
+            ),
           );
         }
       }
@@ -575,7 +589,9 @@ export function compareProcedures(
           continue;
         }
         lines.push(
-          generateDropProcedureScript(targetFunctions[procedure][procedureArgs])
+          generateDropProcedureScript(
+            targetFunctions[procedure][procedureArgs],
+          ),
         );
       }
     }
@@ -586,7 +602,7 @@ export function compareProcedures(
 export function compareAggregates(
   sourceAggregates: Record<string, Record<string, AggregateDefinition>>,
   targetAggregates: Record<string, Record<string, AggregateDefinition>>,
-  config: Config
+  config: Config,
 ) {
   const lines: Sql[] = [];
 
@@ -606,8 +622,8 @@ export function compareAggregates(
               sourceObj.id,
               objectType.AGGREGATE,
               `${aggregate}(${aggregateArgs})`,
-              sourceObj.comment
-            )
+              sourceObj.comment,
+            ),
           );
         } else {
           throw new Error('Not implemented');
@@ -654,8 +670,8 @@ export function compareAggregates(
               sourceObj.id,
               objectType.FUNCTION,
               `${aggregate}(${aggregateArgs})`,
-              sourceObj.comment
-            )
+              sourceObj.comment,
+            ),
           );
         }
       }
@@ -679,9 +695,9 @@ export function compareAggregates(
 export function compareProcedurePrivileges(
   schema: FunctionDefinition,
   sourceProcedurePrivileges: Record<string, FunctionPrivileges>,
-  targetProcedurePrivileges: Record<string, FunctionPrivileges>
+  targetProcedurePrivileges: Record<string, FunctionPrivileges>,
 ) {
-  const lines: Sql[] = [];
+  const lines: (Sql | null)[] = [];
 
   for (const role in sourceProcedurePrivileges) {
     const sourceObj = sourceProcedurePrivileges[role];
@@ -689,11 +705,11 @@ export function compareProcedurePrivileges(
     //Get new or changed role privileges
     if (targetObj) {
       //Procedure privileges for role exists on both database, then compare privileges
-      let changes = { execute: null };
+      let changes: { execute?: boolean } = {};
       if (sourceObj.execute !== targetObj.execute) {
         changes.execute = sourceObj.execute;
         lines.push(
-          generateChangesProcedureRoleGrantsScript(schema, role, changes)
+          generateChangesProcedureRoleGrantsScript(schema, role, changes),
         );
       }
     } else {
@@ -708,7 +724,7 @@ export function compareProcedurePrivileges(
 export function compareSequences(
   config: Config,
   sourceSequences: Record<string, Sequence>,
-  targetSequences: Record<string, Sequence>
+  targetSequences: Record<string, Sequence>,
 ) {
   const lines: Sql[] = [];
   for (const sequence in sourceSequences) {
@@ -717,7 +733,7 @@ export function compareSequences(
       findRenamedSequenceOwnedByTargetTableColumn(
         sequence,
         sourceObj.ownedBy,
-        targetSequences
+        targetSequences,
       ) ?? sequence;
     const targetObj = targetSequences[targetSequence];
 
@@ -725,19 +741,19 @@ export function compareSequences(
       //Sequence exists on both database, then compare sequence definition
       if (sequence !== targetSequence)
         lines.push(
-          generateRenameSequenceScript(targetSequence, `"${sourceObj.name}"`)
+          generateRenameSequenceScript(targetSequence, `"${sourceObj.name}"`),
         );
 
       lines.push(
-        ...compareSequenceDefinition(config, sequence, sourceObj, targetObj)
+        ...compareSequenceDefinition(config, sequence, sourceObj, targetObj),
       );
 
       lines.push(
         ...compareSequencePrivileges(
           sequence,
           sourceObj.privileges,
-          targetObj.privileges
-        )
+          targetObj.privileges,
+        ),
       );
 
       if (sourceObj.comment != targetObj.comment)
@@ -746,16 +762,16 @@ export function compareSequences(
             sourceObj.id,
             objectType.SEQUENCE,
             sequence,
-            sourceObj.comment
-          )
+            sourceObj.comment,
+          ),
         );
     } else {
       //Sequence not exists on target database, then generate the script to create sequence
       lines.push(
         generateCreateSequenceScript(
           sourceObj,
-          config.compareOptions.mapRole(sourceObj.owner)
-        )
+          config.compareOptions.mapRole(sourceObj.owner),
+        ),
       );
       if (sourceObj.comment) {
         lines.push(
@@ -763,8 +779,8 @@ export function compareSequences(
             sourceObj.id,
             objectType.SEQUENCE,
             sequence,
-            sourceObj.comment
-          )
+            sourceObj.comment,
+          ),
         );
       }
     }
@@ -777,12 +793,12 @@ export function compareSequences(
 
 export function findRenamedSequenceOwnedByTargetTableColumn(
   sequenceName: string,
-  tableColumn: string,
-  targetSequences: Record<string, Sequence>
+  ownedBy: string | null,
+  targetSequences: Record<string, Sequence>,
 ) {
   for (let sequence in targetSequences.sequences) {
     if (
-      targetSequences[sequence].ownedBy == tableColumn &&
+      targetSequences[sequence].ownedBy == ownedBy &&
       sequence != sequenceName
     ) {
       return sequence;
@@ -795,81 +811,62 @@ export function compareSequenceDefinition(
   config: Config,
   sequence: string,
   sourceSequenceDefinition: Sequence,
-  targetSequenceDefinition: Sequence
+  targetSequenceDefinition: Sequence,
 ) {
   const lines: Sql[] = [];
-
-  for (const property in sourceSequenceDefinition) {
-    let sourceObj = sourceSequenceDefinition[property];
-    const targetObj = targetSequenceDefinition[property];
-    if (property === 'owner') {
-      sourceObj = config.compareOptions.mapRole(sourceObj);
-    }
-    if (
-      property == 'privileges' ||
-      property == 'ownedBy' ||
-      property == 'name' ||
-      property == 'comment' ||
-      property == 'id' ||
-      sourceObj === targetObj
-    ) {
+  const props: SequenceProperties[] = [
+    'startValue',
+    'minValue',
+    'maxValue',
+    'increment',
+    'cacheSize',
+    'isCycle',
+    'owner',
+  ];
+  for (const p of props) {
+    const sourceObj = sourceSequenceDefinition[p];
+    const targetObj = targetSequenceDefinition[p];
+    if (sourceObj === targetObj) {
       continue;
     }
-    lines.push(
-      generateChangeSequencePropertyScript(
-        sequence,
-        property as SequenceProperties,
-        sourceObj
-      )
-    );
+    let value = sourceObj + '';
+    if (p === 'owner') {
+      value = config.compareOptions.mapRole(sourceObj as string);
+    }
+    lines.push(generateChangeSequencePropertyScript(sequence, p, value));
   }
-
   return lines;
 }
 
 export function compareSequencePrivileges(
   sequence: string,
-  sourceSequencePrivileges: SequencePrivileges,
-  targetSequencePrivileges: SequencePrivileges
+  sourceSequencePrivileges: Record<string, SequencePrivileges>,
+  targetSequencePrivileges: Record<string, SequencePrivileges>,
 ) {
   const lines: Sql[] = [];
 
   for (const role in sourceSequencePrivileges) {
+    const sourceObj = sourceSequencePrivileges[role];
+    const targetObj = targetSequencePrivileges[role];
     //Get new or changed role privileges
-    if (targetSequencePrivileges[role]) {
+    if (targetObj) {
       //Sequence privileges for role exists on both database, then compare privileges
       let changes: ColumnChanges = {};
-      if (
-        sourceSequencePrivileges[role].select !=
-        targetSequencePrivileges[role].select
-      )
-        changes.select = sourceSequencePrivileges[role].select;
+      if (sourceObj.select != targetObj.select)
+        changes.select = sourceObj.select;
 
-      if (
-        sourceSequencePrivileges[role].usage !=
-        targetSequencePrivileges[role].usage
-      )
-        changes.usage = sourceSequencePrivileges[role].usage;
+      if (sourceObj.usage != targetObj.usage) changes.usage = sourceObj.usage;
 
-      if (
-        sourceSequencePrivileges[role].update !=
-        targetSequencePrivileges[role].update
-      )
-        changes.update = sourceSequencePrivileges[role].update;
+      if (sourceObj.update != targetObj.update)
+        changes.update = sourceObj.update;
 
       if (Object.keys(changes).length > 0)
         lines.push(
-          generateChangesSequenceRoleGrantsScript(sequence, role, changes)
+          generateChangesSequenceRoleGrantsScript(sequence, role, changes),
         );
     } else {
       //Sequence grants for role not exists on target database, then generate script to add role privileges
-      lines.push(
-        generateSequenceRoleGrantsScript(
-          sequence,
-          role,
-          sourceSequencePrivileges[role]
-        )
-      );
+      lines.push(generateSequenceRoleGrantsScript(sequence, role, sourceObj));
     }
   }
 

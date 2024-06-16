@@ -1,7 +1,6 @@
 import objectType from '../enums/object-type';
-import { Config } from '../models/config';
 import { Type, Column } from '../catalog/database-objects';
-import { Sql } from '../stmt';
+import { Sql } from './stmt';
 import { ColumnChanges, commentIsEqual } from './utils';
 import {
   generateDropTableColumnScript,
@@ -16,11 +15,12 @@ import {
   generateAddTypeColumnScript,
   generateDropTypeColumnScript,
 } from './sql/type';
+import { Config } from '../config';
 
 export function compareTypes(
   source: Record<string, Type>,
   target: Record<string, Type>,
-  config: Config
+  config: Config,
 ) {
   const sqlScript: Sql[] = [];
   for (const name in source) {
@@ -34,7 +34,11 @@ export function compareTypes(
         //TODO: alter enum
       } else {
         sqlScript.push(
-          ...compareTypeColumns(sourceObj, sourceObj.columns, targetObj.columns)
+          ...compareTypeColumns(
+            sourceObj,
+            sourceObj.columns,
+            targetObj.columns,
+          ),
         );
       }
 
@@ -48,8 +52,8 @@ export function compareTypes(
             sourceObj.id,
             objectType.TYPE,
             name,
-            sourceObj.comment
-          )
+            sourceObj.comment,
+          ),
         );
       }
     } else {
@@ -61,8 +65,8 @@ export function compareTypes(
             sourceObj.id,
             objectType.TYPE,
             name,
-            sourceObj.comment
-          )
+            sourceObj.comment,
+          ),
         );
       }
     }
@@ -87,7 +91,7 @@ export function compareTypes(
 function compareTypeColumns(
   type: Type,
   source: Record<string, Column>,
-  target: Record<string, Column>
+  target: Record<string, Column>,
 ) {
   const sqlScript: Sql[] = [];
   for (const sourceTableColumn in source) {
@@ -96,7 +100,7 @@ function compareTypeColumns(
     if (targetObj) {
       //Table column exists on both database, then compare column schema
       sqlScript.push(
-        ...compareTableColumn(type.fullName, sourceObj, targetObj)
+        ...compareTableColumn(type.fullName, sourceObj, targetObj),
       );
     } else {
       //Table column not exists on target database, then generate script to add column
@@ -107,8 +111,8 @@ function compareTypeColumns(
             sourceObj.id,
             objectType.COLUMN,
             sourceObj.fullName,
-            sourceObj.comment
-          )
+            sourceObj.comment,
+          ),
         );
       }
     }
@@ -169,7 +173,7 @@ function compareTableColumn(table: string, source: Column, target: Column) {
     let rawColumnName = source.name.substring(1).slice(0, -1);
 
     sqlScript.push(
-      generateChangeTableColumnScript(table, source.name, changes)
+      generateChangeTableColumnScript(table, source.name, changes),
     );
   }
 
@@ -179,8 +183,8 @@ function compareTableColumn(table: string, source: Column, target: Column) {
         source.id,
         objectType.COLUMN,
         source.fullName,
-        source.comment
-      )
+        source.comment,
+      ),
     );
 
   return sqlScript;

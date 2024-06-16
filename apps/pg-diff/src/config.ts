@@ -1,5 +1,4 @@
-import { ClientConfig } from './client-config';
-import { TableDefinition } from './table-definition';
+import { TableDefinition } from './compare/table-definition';
 
 export interface Config {
   targetClient: ClientConfig;
@@ -28,4 +27,13 @@ export interface Config {
     historyTableName: string;
     historyTableSchema: string;
   };
+}
+
+export interface ClientConfig {
+  host: string;
+  port: number;
+  database: string;
+  user: string;
+  password: string;
+  applicationName: string;
 }

@@ -1,6 +1,6 @@
-import { PrivilegeChanges } from '../../compare/utils';
+import { PrivilegeChanges, buildGrants } from '../../compare/utils';
 import objectType from '../../enums/object-type';
-import { Sql, declaration, dependency, join, stmt } from '../../stmt';
+import { Sql, declaration, dependency, join, stmt } from '../stmt';
 import {
   ConstraintDefinition,
   Privileges,
@@ -13,9 +13,9 @@ import { generateChangeCommentScript, hints } from './misc';
 export function generateTableGrantsDefinition(
   table: string,
   role: string,
-  privileges: Privileges
-): Sql | null {
-  const list = [
+  privileges: Privileges,
+): Sql[] {
+  return buildGrants([
     ['SELECT', privileges.select],
     ['INSERT', privileges.insert],
     ['UPDATE', privileges.update],
@@ -23,16 +23,10 @@ export function generateTableGrantsDefinition(
     ['TRUNCATE', privileges.truncate],
     ['REFERENCES', privileges.references],
     ['TRIGGER', privileges.trigger],
-  ];
-  const filtered = list.filter((v) => v[1] !== undefined);
-  if (filtered.length === 0) {
-    return null;
-  }
-  const str =
-    list.length === filtered.length
-      ? 'ALL'
-      : filtered.map(([op]) => op).join(', ');
-  return stmt`GRANT ${str} ON TABLE ${table} TO ${role};${hints.potentialRoleMissing}`;
+  ]).map(
+    ([privileges, type]) =>
+      stmt`${type} ${privileges} ON TABLE ${table} TO ${role};${hints.potentialRoleMissing}`,
+  );
 }
 
 export function generateCreateTableScript(table: string, schema: TableObject) {
@@ -46,8 +40,8 @@ export function generateCreateTableScript(table: string, schema: TableObject) {
     columns.push(
       stmt`CONSTRAINT ${name} ${dependency(
         constraint.definition,
-        constraint.relid
-      )} `
+        constraint.relid,
+      )} `,
     );
   }
 
@@ -64,11 +58,12 @@ export function generateCreateTableScript(table: string, schema: TableObject) {
       obj.definition
         .replace('CREATE INDEX', 'CREATE INDEX IF NOT EXISTS')
         .replace('CREATE UNIQUE INDEX', 'CREATE UNIQUE INDEX IF NOT EXISTS') +
-      ';'
+      ';',
   );
 
   const privileges = Object.entries(schema.privileges)
     .map(([role, obj]) => generateTableGrantsDefinition(table, role, obj))
+    .flat()
     .filter((v) => !!v);
 
   const columnsComment: Sql[] = columnArr
@@ -78,8 +73,8 @@ export function generateCreateTableScript(table: string, schema: TableObject) {
         obj.id,
         objectType.COLUMN,
         obj.fullName,
-        obj.comment
-      )
+        obj.comment,
+      ),
     );
 
   const constraintsComment: Sql[] = Object.values(schema.constraints)
@@ -90,8 +85,8 @@ export function generateCreateTableScript(table: string, schema: TableObject) {
         objectType.CONSTRAINT,
         obj.name,
         obj.comment,
-        table
-      )
+        table,
+      ),
     );
 
   const indexesComment: Sql[] = Object.values(schema.indexes)
@@ -101,12 +96,12 @@ export function generateCreateTableScript(table: string, schema: TableObject) {
         obj.id,
         objectType.INDEX,
         obj.name,
-        obj.comment
-      )
+        obj.comment,
+      ),
     );
   return stmt`CREATE TABLE IF NOT EXISTS ${declaration(
     schema.id,
-    table
+    table,
   )} (\n\t${join(columns, ',\n\t')}\n)${options};
   ${indexes.join('\n')}
 ALTER TABLE IF EXISTS ${table} OWNER TO ${schema.owner};
@@ -119,7 +114,7 @@ ${join(indexesComment, '\n')}`;
 export function generateTableRoleGrantsScript(
   table: string,
   role: string,
-  privileges: Privileges
+  privileges: Privileges,
 ) {
   return generateTableGrantsDefinition(table, role, privileges);
 }
@@ -127,9 +122,9 @@ export function generateTableRoleGrantsScript(
 export function generateChangesTableRoleGrantsScript(
   table: string,
   role: string,
-  changes: PrivilegeChanges
+  changes: PrivilegeChanges,
 ) {
-  const list = [
+  return buildGrants([
     ['SELECT', changes.select],
     ['INSERT', changes.insert],
     ['UPDATE', changes.update],
@@ -137,16 +132,12 @@ export function generateChangesTableRoleGrantsScript(
     ['TRUNCATE', changes.truncate],
     ['REFERENCES', changes.references],
     ['TRIGGER', changes.trigger],
-  ];
-
-  return list
-    .filter((v) => v[1] !== undefined)
-    .map(
-      ([op, grant]) =>
-        stmt`${grant ? 'GRANT' : 'REVOKE'} ${op} ON TABLE ${table} ${
-          grant ? 'TO' : 'FROM'
-        } ${role};${hints.potentialRoleMissing}`
-    );
+  ]).map(
+    ([grant, privileges]) =>
+      stmt`${grant ? 'GRANT' : 'REVOKE'} ${privileges} ON TABLE ${table} ${
+        grant ? 'TO' : 'FROM'
+      } ${role};${hints.potentialRoleMissing}`,
+  );
 }
 
 export function generateChangeTableOwnerScript(table: string, owner: string) {
@@ -156,27 +147,27 @@ export function generateChangeTableOwnerScript(table: string, owner: string) {
 export function generateAddTableConstraintScript(
   table: TableObject,
   constraint: string,
-  schema: ConstraintDefinition
+  schema: ConstraintDefinition,
 ) {
   return stmt`ALTER TABLE IF EXISTS ${dependency(
     table.fullName,
-    table.id
+    table.id,
   )} ADD CONSTRAINT ${declaration(schema.id, constraint)} ${dependency(
     schema.definition,
-    schema.relid
+    schema.relid,
   )};`;
 }
 
 export function generateDropTableConstraintScript(
   table: TableObject,
-  constraint: ConstraintDefinition
+  constraint: ConstraintDefinition,
 ) {
   return stmt`ALTER TABLE IF EXISTS ${table.fullName} DROP CONSTRAINT IF EXISTS "${constraint.name}";`;
 }
 
 export function generateChangeTableOptionsScript(
   table: string,
-  options: TableOptions
+  options: TableOptions,
 ) {
   return stmt`ALTER TABLE IF EXISTS ${table} SET ${
     options.withOids ? 'WITH' : 'WITHOUT'

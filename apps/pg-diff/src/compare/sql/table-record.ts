@@ -1,16 +1,16 @@
-import { stmt } from '../../stmt';
+import { stmt } from '../stmt';
 import { hints } from './misc';
 
 export function generateUpdateTableRecordScript(
   table: string,
   fields: any,
   filterConditions: any,
-  changes: any
+  changes: any,
 ) {
   let updates: string[] = [];
   for (let field in changes) {
     updates.push(
-      `"${field}" = ${generateSqlFormattedValue(field, fields, changes[field])}`
+      `"${field}" = ${generateSqlFormattedValue(field, fields, changes[field])}`,
     );
   }
 
@@ -20,13 +20,13 @@ export function generateUpdateTableRecordScript(
       `"${condition}" = ${generateSqlFormattedValue(
         condition,
         fields,
-        filterConditions[condition]
-      )}`
+        filterConditions[condition],
+      )}`,
     );
   }
 
   return stmt`UPDATE ${table} SET ${updates.join(', ')} WHERE ${conditions.join(
-    ' AND '
+    ' AND ',
   )};`;
 }
 
@@ -34,7 +34,7 @@ export function generateInsertTableRecordScript(
   table: string,
   record: any,
   fields: any[],
-  isIdentityValuesAllowed: boolean
+  isIdentityValuesAllowed: boolean,
 ) {
   let fieldNames: string[] = [];
   let fieldValues: string[] = [];
@@ -54,7 +54,7 @@ export function generateInsertTableRecordScript(
 export function generateDeleteTableRecordScript(
   table: string,
   fields: any[],
-  keyFieldsMap: any
+  keyFieldsMap: any,
 ) {
   let conditions: string[] = [];
   for (let condition in keyFieldsMap) {
@@ -62,8 +62,8 @@ export function generateDeleteTableRecordScript(
       `"${condition}" = ${generateSqlFormattedValue(
         condition,
         fields,
-        keyFieldsMap[condition]
-      )}`
+        keyFieldsMap[condition],
+      )}`,
     );
   }
 
@@ -73,7 +73,7 @@ export function generateDeleteTableRecordScript(
 export function generateSqlFormattedValue(
   fieldName: string,
   fields: any,
-  value: any
+  value: any,
 ) {
   if (value === undefined)
     throw new Error(`The field "${fieldName}" contains an "undefined" value!`);
@@ -126,7 +126,7 @@ export function generateSqlFormattedValue(
     case 'C': //COMPOSITE TYPE
     default:
       throw new Error(
-        `The data type category '${dataTypeCategory}' is not implemented yet!`
+        `The data type category '${dataTypeCategory}' is not implemented yet!`,
       );
   }
 }
@@ -135,7 +135,7 @@ export function generateMergeTableRecord(
   table: string,
   fields: any,
   changes: any,
-  options: any
+  options: any,
 ) {
   let fieldNames: string[] = [];
   let fieldValues: string[] = [];
@@ -144,7 +144,7 @@ export function generateMergeTableRecord(
     fieldNames.push(`"${field}"`);
     fieldValues.push(generateSqlFormattedValue(field, fields, changes[field]));
     updates.push(
-      `"${field}" = ${generateSqlFormattedValue(field, fields, changes[field])}`
+      `"${field}" = ${generateSqlFormattedValue(field, fields, changes[field])}`,
     );
   }
 
@@ -155,13 +155,13 @@ export function generateMergeTableRecord(
     conflictDefinition = `("${options.uniqueFields.join('", "')}")`;
   else
     throw new Error(
-      `Impossible to generate conflict definition for table ${table} record to merge!`
+      `Impossible to generate conflict definition for table ${table} record to merge!`,
     );
 
   let script = `INSERT INTO ${table} (${fieldNames.join(
-    ', '
+    ', ',
   )}) VALUES (${fieldValues.join(
-    ', '
+    ', ',
   )})\nON CONFLICT ${conflictDefinition}\nDO UPDATE SET ${updates.join(', ')}`;
   return script;
 }
