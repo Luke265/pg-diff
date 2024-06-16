@@ -14,9 +14,9 @@ beforeAll(async () => {
   await db.query(`DROP DATABASE IF EXISTS ${target}`);
   await db.query(`CREATE DATABASE ${source}`);
   await db.query(`CREATE DATABASE ${target}`);
-  const sourceUrl = new URL(process.env['ROOT_DATABASE_URL']);
+  const sourceUrl = new URL(process.env['ROOT_DATABASE_URL']!!);
   sourceUrl.pathname = source;
-  const targetUrl = new URL(process.env['ROOT_DATABASE_URL']);
+  const targetUrl = new URL(process.env['ROOT_DATABASE_URL']!!);
   targetUrl.pathname = target;
   _sourceDb = new Client(sourceUrl.toString());
   await _sourceDb.connect();

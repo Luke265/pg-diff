@@ -2,7 +2,7 @@ import { sourceDb, targetDb } from './setup-db';
 import fs from 'fs';
 import path from 'path';
 import EventEmitter from 'events';
-import { Config } from 'apps/pg-diff/src/models/config';
+import { Config } from 'apps/pg-diff/src/config';
 import {
   collectDatabaseObject,
   compareDatabaseObjects,
@@ -11,10 +11,10 @@ import { sortByDependencies } from 'apps/pg-diff/src/utils';
 
 export async function compare(dir: string) {
   await sourceDb().query(
-    fs.readFileSync(path.join(dir, 'source.sql')).toString()
+    fs.readFileSync(path.join(dir, 'source.sql')).toString(),
   );
   await targetDb().query(
-    fs.readFileSync(path.join(dir, 'target.sql')).toString()
+    fs.readFileSync(path.join(dir, 'target.sql')).toString(),
   );
   const config: Config = {
     targetClient: {} as any,
@@ -49,12 +49,12 @@ export async function compare(dir: string) {
     dbSourceObjects,
     dbTargetObjects,
     config,
-    new EventEmitter()
+    new EventEmitter(),
   );
 
   const sorted = sortByDependencies(ddl);
   const result = sorted.join('\n');
-  const tmp = path.join('tmp', dir.replace(__dirname, ''));
+  const tmp = path.join('tmp', 'test', dir.replace(__dirname, ''));
   fs.mkdirSync(tmp, { recursive: true });
   fs.writeFileSync(path.join(tmp, 'result.sql'), result);
   await targetDb().query(result.toString());

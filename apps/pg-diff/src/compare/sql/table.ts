@@ -24,8 +24,10 @@ export function generateTableGrantsDefinition(
     ['REFERENCES', privileges.references],
     ['TRIGGER', privileges.trigger],
   ]).map(
-    ([privileges, type]) =>
-      stmt`${type} ${privileges} ON TABLE ${table} TO ${role};${hints.potentialRoleMissing}`,
+    ([type, privileges]) =>
+      stmt`${type} ${privileges} ON TABLE ${table} ${
+        type === 'GRANT' ? 'TO' : 'FROM'
+      } ${role};${hints.potentialRoleMissing}`,
   );
 }
 
@@ -133,9 +135,9 @@ export function generateChangesTableRoleGrantsScript(
     ['REFERENCES', changes.references],
     ['TRIGGER', changes.trigger],
   ]).map(
-    ([grant, privileges]) =>
-      stmt`${grant ? 'GRANT' : 'REVOKE'} ${privileges} ON TABLE ${table} ${
-        grant ? 'TO' : 'FROM'
+    ([type, privileges]) =>
+      stmt`${type} ${privileges} ON TABLE ${table} ${
+        type === 'GRANT' ? 'TO' : 'FROM'
       } ${role};${hints.potentialRoleMissing}`,
   );
 }

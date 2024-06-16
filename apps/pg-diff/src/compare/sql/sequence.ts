@@ -22,8 +22,10 @@ export function generateSequenceGrantsDefinition(
     ['USAGE', privileges.usage],
     ['UPDATE', privileges.update],
   ]).map(
-    ([grant, privileges]) =>
-      `${grant} ${privileges} ON SEQUENCE ${sequence} TO ${role};${hints.potentialRoleMissing}`,
+    ([type, privileges]) =>
+      `${type} ${privileges} ON SEQUENCE ${sequence} ${
+        type === 'GRANT' ? 'TO' : 'FROM'
+      } ${role};${hints.potentialRoleMissing}`,
   );
 }
 
