@@ -2,6 +2,28 @@
   "name": "@pg-diff3/source",
   "version": "0.0.0",
   "license": "MIT",
+  "nx": {
+    "targets": {
+      "build-tools": {
+        "executor": "@nx/esbuild:esbuild",
+        "outputs": [
+          "{options.outputPath}"
+        ],
+        "defaultConfiguration": "production",
+        "options": {
+          "platform": "node",
+          "outputPath": "dist/tools",
+          "format": [
+            "esm"
+          ],
+          "bundle": false,
+          "generatePackageJson": false,
+          "main": "tools/publish.ts",
+          "tsConfig": "tsconfig.tools.json"
+        }
+      }
+    }
+  },
   "scripts": {},
   "private": true,
   "dependencies": {

@@ -1,4 +1,4 @@
-import { TableDefinition } from './compare/table-definition';
+import { TableDefinition } from './compare/table-definition.js';
 
 export interface Config {
   targetClient: ClientConfig;

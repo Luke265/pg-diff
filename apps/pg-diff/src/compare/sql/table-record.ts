@@ -1,5 +1,5 @@
-import { stmt } from '../stmt';
-import { hints } from './misc';
+import { stmt } from '../stmt.js';
+import { hints } from './misc.js';
 
 export function generateUpdateTableRecordScript(
   table: string,

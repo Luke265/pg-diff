@@ -1,3 +1,6 @@
-export { collectDatabaseObject, compareDatabaseObjects } from './compare';
-export * from './config';
-export { sortByDependencies } from './utils';
+export {
+  collectDatabaseObject,
+  compareDatabaseObjects,
+} from './compare/index.js';
+export * from './config.js';
+export { sortByDependencies } from './utils.js';

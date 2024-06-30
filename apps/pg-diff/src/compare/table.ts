@@ -1,5 +1,5 @@
-import { isEqual } from 'lodash';
-import objectType from '../enums/object-type';
+import _ from 'lodash';
+import objectType from '../enums/object-type.js';
 import {
   TableObject,
   DatabaseObjects,
@@ -9,18 +9,18 @@ import {
   Policy,
   Column,
   Privileges,
-} from '../catalog/database-objects';
-import { Sql, stmt } from './stmt';
-import { commentIsEqual, ColumnChanges } from './utils';
+} from '../catalog/database-objects.js';
+import { Sql, stmt } from './stmt.js';
+import { commentIsEqual, ColumnChanges } from './utils.js';
 import {
   generateAddTableColumnScript,
   generateDropTableColumnScript,
   generateChangeTableColumnScript,
-} from './sql/column';
-import { generateDropIndexScript } from './sql/index-db';
-import { generateDropMaterializedViewScript } from './sql/materialized-view';
-import { generateChangeCommentScript } from './sql/misc';
-import { dropPolicy, createPolicy } from './sql/policy';
+} from './sql/column.js';
+import { generateDropIndexScript } from './sql/index-db.js';
+import { generateDropMaterializedViewScript } from './sql/materialized-view.js';
+import { generateChangeCommentScript } from './sql/misc.js';
+import { dropPolicy, createPolicy } from './sql/policy.js';
 import {
   generateChangeTableOwnerScript,
   generateCreateTableScript,
@@ -30,9 +30,9 @@ import {
   generateAddTableConstraintScript,
   generateChangesTableRoleGrantsScript,
   generateTableRoleGrantsScript,
-} from './sql/table';
-import { generateDropViewScript } from './sql/view';
-import { Config } from '../config';
+} from './sql/table.js';
+import { generateDropViewScript } from './sql/view.js';
+import { Config } from '../config.js';
 
 export function compareTables(
   sourceTables: Record<string, TableObject>,
@@ -542,7 +542,7 @@ export function compareTablePolicies(
       sourceObj.permissive === targetObj.permissive &&
       sourceObj.withCheck === targetObj.withCheck &&
       sourceObj.for === targetObj.for &&
-      isEqual(roles, targetObj.roles);
+      _.isEqual(roles, targetObj.roles);
     if (!isSame) {
       if (targetObj) {
         lines.push(dropPolicy(table.schema, table.name, name));

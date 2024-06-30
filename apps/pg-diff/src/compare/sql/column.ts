@@ -1,7 +1,7 @@
-import { ColumnChanges } from '../../compare/utils';
-import { Sql, dependency, join, stmt } from '../stmt';
-import { Column } from '../../catalog/database-objects';
-import { hints } from './misc';
+import { ColumnChanges } from '../../compare/utils.js';
+import { Sql, dependency, join, stmt } from '../stmt.js';
+import { Column } from '../../catalog/database-objects.js';
+import { hints } from './misc.js';
 
 export function generateColumnDataTypeDefinition(schema: ColumnChanges) {
   if (!schema.datatype || !schema.dataTypeID) {

@@ -1,4 +1,5 @@
 export type RawValue = string | Sql | SqlRef | Declaration | null;
+
 export class Sql {
   readonly dependencies: (number | string)[] = [];
   readonly declarations: (number | string)[] = [];
@@ -57,6 +58,7 @@ export class SqlRef {
     return this.value;
   }
 }
+
 class Declaration {
   constructor(
     public readonly id: number,
@@ -66,6 +68,7 @@ class Declaration {
     return this.value;
   }
 }
+
 export function stmt(
   strings: readonly string[],
   ...values: readonly RawValue[]

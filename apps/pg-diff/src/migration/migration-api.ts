@@ -2,21 +2,21 @@ import {
   getPatchFileInfo,
   prepareMigrationConfig,
   prepareMigrationsHistoryTable,
-} from './utils';
-import patchStatus from '../enums/patch-status';
+} from './utils.js';
+import patchStatus from '../enums/patch-status.js';
 import path from 'path';
 import fs from 'fs';
-import { PatchInfo } from './patch-info';
-import { Client } from 'pg';
-import { MigrationConfig } from './migration-config';
+import { PatchInfo } from './patch-info.js';
+import pg from 'pg';
+import { MigrationConfig } from './migration-config.js';
 import { EventEmitter } from 'events';
 import readline from 'readline';
-import { getServerVersion } from '../utils';
+import { getServerVersion } from '../utils.js';
 import {
   generateUpdateTableRecordScript,
   generateMergeTableRecord,
-} from '../compare/sql/table-record';
-import { Config } from '../config';
+} from '../compare/sql/table-record.js';
+import { Config } from '../config.js';
 
 export async function migrate(
   config: Config,
@@ -30,7 +30,7 @@ export async function migrate(
 
   eventEmitter.emit('migrate', 'Connecting to database ...', 20);
   let clientConfig = toSourceClient ? config.sourceClient : config.targetClient;
-  let pgClient = new Client({
+  let pgClient = new pg.Client({
     user: clientConfig.user,
     host: clientConfig.host,
     database: clientConfig.database,
@@ -173,7 +173,7 @@ export async function migrate(
 }
 
 async function checkPatchStatus(
-  pgClient: Client,
+  pgClient: pg.Client,
   patchFileInfo: PatchInfo,
   config: MigrationConfig,
 ) {
@@ -190,7 +190,7 @@ async function checkPatchStatus(
 }
 
 async function applyPatch(
-  pgClient: Client,
+  pgClient: pg.Client,
   patchFileInfo: any,
   config: MigrationConfig,
 ) {
@@ -208,7 +208,7 @@ async function applyPatch(
 }
 
 async function readPatch(
-  pgClient: Client,
+  pgClient: pg.Client,
   patchFileInfo: any,
   config: MigrationConfig,
 ) {
@@ -286,7 +286,7 @@ async function readPatch(
 
 async function savePatch(config: Config, patchFileName: string) {
   const migrationConfig = prepareMigrationConfig(config);
-  const pgClient = new Client({
+  const pgClient = new pg.Client({
     user: config.sourceClient.user,
     host: config.sourceClient.host,
     database: config.sourceClient.database,
@@ -313,7 +313,7 @@ async function savePatch(config: Config, patchFileName: string) {
 }
 
 async function executePatchScript(
-  pgClient: Client,
+  pgClient: pg.Client,
   patchScript: any,
   config: MigrationConfig,
 ) {
@@ -323,7 +323,7 @@ async function executePatchScript(
 }
 
 async function updateRecordToHistoryTable(
-  pgClient: Client,
+  pgClient: pg.Client,
   patchScript: any,
   config: MigrationConfig,
 ) {
@@ -353,7 +353,7 @@ async function updateRecordToHistoryTable(
 }
 
 async function addRecordToHistoryTable(
-  pgClient: Client,
+  pgClient: pg.Client,
   patchFileInfo: PatchInfo,
   config: MigrationConfig,
 ) {

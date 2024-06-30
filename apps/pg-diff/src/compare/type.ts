@@ -1,21 +1,21 @@
-import objectType from '../enums/object-type';
-import { Type, Column } from '../catalog/database-objects';
-import { Sql } from './stmt';
-import { ColumnChanges, commentIsEqual } from './utils';
+import objectType from '../enums/object-type.js';
+import { Type, Column } from '../catalog/database-objects.js';
+import { Sql } from './stmt.js';
+import { ColumnChanges, commentIsEqual } from './utils.js';
 import {
   generateDropTableColumnScript,
   generateAddTableColumnScript,
   generateChangeTableColumnScript,
-} from './sql/column';
-import { generateChangeCommentScript } from './sql/misc';
+} from './sql/column.js';
+import { generateChangeCommentScript } from './sql/misc.js';
 import {
   generateChangeTypeOwnerScript,
   generateCreateTypeScript,
   generateDropTypeScript,
   generateAddTypeColumnScript,
   generateDropTypeColumnScript,
-} from './sql/type';
-import { Config } from '../config';
+} from './sql/type.js';
+import { Config } from '../config.js';
 
 export function compareTypes(
   source: Record<string, Type>,

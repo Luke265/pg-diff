@@ -1,8 +1,8 @@
-import objectType from '../../enums/object-type';
-import { Sql, declaration, dependency, join, stmt } from '../stmt';
-import { Column, Type } from '../../catalog/database-objects';
-import { generateColumnDataTypeDefinition } from './column';
-import { generateChangeCommentScript } from './misc';
+import objectType from '../../enums/object-type.js';
+import { Sql, declaration, dependency, join, stmt } from '../stmt.js';
+import { Column, Type } from '../../catalog/database-objects.js';
+import { generateColumnDataTypeDefinition } from './column.js';
+import { generateChangeCommentScript } from './misc.js';
 
 export function generateDropTypeScript(type: Type) {
   return stmt`DROP TYPE ${type.fullName};`;

@@ -1,4 +1,4 @@
-import { SqlRef } from './stmt';
+import { SqlRef } from './stmt.js';
 
 export function commentIsEqual(
   a: string | null | undefined,

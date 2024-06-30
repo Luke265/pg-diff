@@ -1,18 +1,17 @@
 import { ClientBase } from 'pg';
-import { DatabaseObjects } from '../catalog/database-objects';
-import { TableDefinition } from './table-definition';
+import { DatabaseObjects } from '../catalog/database-objects.js';
+import { TableDefinition } from './table-definition.js';
 import EventEmitter from 'events';
-import { Sql, stmt } from './stmt';
-import { TableData } from './table-data';
-import { getServerVersion } from '../utils';
-import { isEqual } from 'lodash';
-import { generateSetSequenceValueScript } from './sql/sequence';
+import { Sql, stmt } from './stmt.js';
+import { TableData } from './table-data.js';
+import { getServerVersion } from '../utils.js';
+import _ from 'lodash';
 import {
   generateInsertTableRecordScript,
   generateDeleteTableRecordScript,
   generateUpdateTableRecordScript,
-} from './sql/table-record';
-import { Config } from '../config';
+} from './sql/table-record.js';
+import { Config } from '../config.js';
 
 export async function compareTablesRecords(
   config: Config,
@@ -412,6 +411,10 @@ function compareFieldValues(sourceValue: any, targetValue: any) {
   else if (sourceValue instanceof Date)
     return sourceValue.getTime() !== targetValue.getTime();
   else if (sourceValue instanceof Object)
-    return !isEqual(sourceValue, targetValue);
+    return !_.isEqual(sourceValue, targetValue);
   else return sourceValue !== targetValue;
+}
+
+function generateSetSequenceValueScript(tableName: string, sequence: any) {
+  return stmt`SELECT setval(pg_get_serial_sequence('${tableName}', '${sequence.attname}'), max("${sequence.attname}"), true) FROM ${tableName};`;
 }

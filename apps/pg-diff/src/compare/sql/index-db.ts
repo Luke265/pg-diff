@@ -1,5 +1,5 @@
-import { stmt } from '../stmt';
-import { IndexDefinition } from '../../catalog/database-objects';
+import { stmt } from '../stmt.js';
+import { IndexDefinition } from '../../catalog/database-objects.js';
 
 export function generateChangeIndexScript(index: string, definition: string) {
   return stmt`DROP INDEX IF EXISTS ${index};\n${definition};`;

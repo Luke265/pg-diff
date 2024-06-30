@@ -1,7 +1,7 @@
 import { ClientBase } from 'pg';
-import { DatabaseObjects } from './database-objects';
-import { Config } from './config';
-import { extractFunctionCalls } from './utils';
+import { DatabaseObjects } from './database-objects.js';
+import { Config } from './config.js';
+import { extractFunctionCalls } from './utils.js';
 import {
   retrieveSchemas,
   retrieveTables,
@@ -12,7 +12,7 @@ import {
   retrieveSequences,
   retrieveTypes,
   retrieveDomains,
-} from './catalog-api';
+} from './catalog-api.js';
 
 export async function loadCatalog(client: ClientBase, config: Config) {
   const dbObjects: DatabaseObjects = {
@@ -37,11 +37,11 @@ export async function loadCatalog(client: ClientBase, config: Config) {
   dbObjects.domains = await retrieveDomains(client, config);
   const { map: functionMap, list: functionList } = await retrieveFunctions(
     client,
-    config
+    config,
   );
   dbObjects.functionMap = functionMap;
   const tableIdMap = Object.values(dbObjects.tables).map(
-    (t) => [t.id, `${t.schema}.${t.name}`] as [number, string]
+    (t) => [t.id, `${t.schema}.${t.name}`] as [number, string],
   );
   // mark mentioned tables in a function definition as dependencies
   for (const fn of functionList) {
@@ -57,7 +57,7 @@ export async function loadCatalog(client: ClientBase, config: Config) {
       ...extractFunctionCalls(fn.definition)
         .filter((name) => functionMap[name])
         .map((name) => Object.values(functionMap[name]).map((f) => f.id))
-        .flat()
+        .flat(),
     );
   }
   for (const name in dbObjects.tables) {

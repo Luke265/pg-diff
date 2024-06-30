@@ -1,0 +1,11 @@
+{
+  "name": "pg-diff",
+  "version": "0.0.1",
+  "peerDependencies": {
+    "lodash": ">=4",
+    "pg": ">=8"
+  },
+  "module": "./index.js",
+  "type": "module",
+  "main": "./index.js"
+}

@@ -1,5 +1,5 @@
-import { Domain } from '../../catalog/database-objects';
-import { declaration, dependency, stmt } from '../stmt';
+import { Domain } from '../../catalog/database-objects.js';
+import { declaration, dependency, stmt } from '../stmt.js';
 
 export function generateDropDomainScript(type: Domain) {
   return stmt`DROP DOMAIN ${type.fullName};`;

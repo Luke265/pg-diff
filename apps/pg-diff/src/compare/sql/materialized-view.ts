@@ -1,6 +1,6 @@
-import { join, stmt } from '../stmt';
-import { MaterializedViewDefinition } from '../../catalog/database-objects';
-import { generateTableGrantsDefinition } from './table';
+import { join, stmt } from '../stmt.js';
+import { MaterializedViewDefinition } from '../../catalog/database-objects.js';
+import { generateTableGrantsDefinition } from './table.js';
 
 export function generateCreateMaterializedViewScript(
   view: string,

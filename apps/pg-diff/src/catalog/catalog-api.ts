@@ -1,6 +1,6 @@
 import { ClientBase } from 'pg';
-import { Config } from './config';
-import { getServerVersion } from '../utils';
+import { Config } from './config.js';
+import { getServerVersion } from '../utils.js';
 import {
   getAllSchemaNames,
   getSchemas,
@@ -23,7 +23,7 @@ import {
   getTablePolicies,
   getTypes,
   getDomains,
-} from './introspection';
+} from './introspection.js';
 import {
   AggregateDefinition,
   Column,
@@ -35,8 +35,8 @@ import {
   TableObject,
   Type,
   ViewDefinition,
-} from './database-objects';
-import { checkServerCompatibility } from './utils';
+} from './database-objects.js';
+import { checkServerCompatibility } from './utils.js';
 
 const COLUMN_TYPE_MAP = {
   int4: 'INTEGER',

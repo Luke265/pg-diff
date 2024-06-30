@@ -1,4 +1,4 @@
-import { ServerVersion } from './server-version';
+import { ServerVersion } from './server-version.js';
 
 const typeNameRegex = /"?((\w+)"?\."?(\w+)+)"?/g;
 export function* extractTypeNames(sqlFunctionBody: string) {

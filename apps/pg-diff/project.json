@@ -50,6 +50,16 @@
           "buildTarget": "pg-diff:build:production"
         }
       }
+    },
+    "deploy": {
+      "executor": "nx:run-commands",
+      "options": {
+        "parallel": false,
+        "commands": [
+          "tsc --project tsconfig.tools.json",
+          "node dist/out-tsc/tools/deploy.js"
+        ]
+      }
     }
   }
 }

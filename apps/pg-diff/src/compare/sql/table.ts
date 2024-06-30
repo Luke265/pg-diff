@@ -1,14 +1,14 @@
-import { PrivilegeChanges, buildGrants } from '../../compare/utils';
-import objectType from '../../enums/object-type';
-import { Sql, declaration, dependency, join, stmt } from '../stmt';
+import { PrivilegeChanges, buildGrants } from '../../compare/utils.js';
+import objectType from '../../enums/object-type.js';
+import { Sql, declaration, dependency, join, stmt } from '../stmt.js';
 import {
   ConstraintDefinition,
   Privileges,
   TableObject,
   TableOptions,
-} from '../../catalog/database-objects';
-import { generateColumnDefinition } from './column';
-import { generateChangeCommentScript, hints } from './misc';
+} from '../../catalog/database-objects.js';
+import { generateColumnDefinition } from './column.js';
+import { generateChangeCommentScript, hints } from './misc.js';
 
 export function generateTableGrantsDefinition(
   table: string,

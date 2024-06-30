@@ -2,13 +2,13 @@ import path from 'path';
 import {
   MigrationHistoryTableSchema,
   migrationHistoryTableSchema,
-} from './migration-history-table-schema';
-import { PatchInfo } from './patch-info';
-import { Client } from 'pg';
-import { MigrationConfig } from './migration-config';
-import { TableObject } from '../catalog/database-objects';
-import { generateCreateTableScript } from '../compare/sql/table';
-import { Config } from '../config';
+} from './migration-history-table-schema.js';
+import { PatchInfo } from './patch-info.js';
+import type { Client } from 'pg';
+import { MigrationConfig } from './migration-config.js';
+import { TableObject } from '../catalog/database-objects.js';
+import { generateCreateTableScript } from '../compare/sql/table.js';
+import { Config } from '../config.js';
 
 export function prepareMigrationConfig(config: Config): MigrationConfig {
   if (!config.migrationOptions.patchesDirectory)

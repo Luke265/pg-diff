@@ -1,4 +1,4 @@
-import { SqlRef } from '../compare/stmt';
+import { SqlRef } from '../compare/stmt.js';
 
 export interface FunctionDefinition {
   id: number;

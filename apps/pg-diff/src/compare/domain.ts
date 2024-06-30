@@ -1,15 +1,15 @@
-import objectType from '../enums/object-type';
-import { Domain } from '../catalog/database-objects';
-import { Sql } from './stmt';
-import { commentIsEqual } from './utils';
+import objectType from '../enums/object-type.js';
+import { Domain } from '../catalog/database-objects.js';
+import { Sql } from './stmt.js';
+import { commentIsEqual } from './utils.js';
 import {
   generateChangeDomainCheckScript,
   generateChangeDomainOwnerScript,
   generateCreateDomainScript,
   generateDropDomainScript,
-} from './sql/domain';
-import { generateChangeCommentScript } from './sql/misc';
-import { Config } from '../config';
+} from './sql/domain.js';
+import { generateChangeCommentScript } from './sql/misc.js';
+import { Config } from '../config.js';
 
 export function compareDomains(
   source: Record<string, Domain>,

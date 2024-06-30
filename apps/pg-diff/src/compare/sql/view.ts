@@ -1,6 +1,6 @@
-import { join, stmt } from '../stmt';
-import { ViewDefinition } from '../../catalog/database-objects';
-import { generateTableGrantsDefinition } from './table';
+import { join, stmt } from '../stmt.js';
+import { ViewDefinition } from '../../catalog/database-objects.js';
+import { generateTableGrantsDefinition } from './table.js';
 
 export function generateCreateViewScript(view: string, schema: ViewDefinition) {
   const privileges = Object.entries(schema.privileges)

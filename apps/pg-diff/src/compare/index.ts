@@ -5,63 +5,57 @@ import {
   FunctionPrivileges,
   MaterializedViewDefinition,
   Schema,
-  Sequence,
-  SequencePrivileges,
   TableObject,
   ViewDefinition,
-} from '../catalog/database-objects';
-import objectType from '../enums/object-type';
+} from '../catalog/database-objects.js';
+import objectType from '../enums/object-type.js';
 
 import EventEmitter from 'events';
-import { ClientBase, Client } from 'pg';
-import { getServerVersion } from '../utils';
-import { Sql } from './stmt';
-import { ColumnChanges } from './utils';
-import { compareTypes } from './type';
-import { compareDomains } from './domain';
-import { compareTablesRecords } from './table-record';
+import { ClientBase } from 'pg';
+import pg from 'pg';
+import { getServerVersion } from '../utils.js';
+import { Sql } from './stmt.js';
+import { compareTypes } from './type.js';
+import { compareDomains } from './domain.js';
+import { compareTablesRecords } from './table-record.js';
 import {
   compareTableIndexes,
   compareTablePolicies,
   compareTablePrivileges,
   compareTables,
-} from './table';
-import { loadCatalog } from '../catalog';
-import { retrieveAllSchemas } from '../catalog/catalog-api';
+} from './table.js';
+import { loadCatalog } from '../catalog/index.js';
+import { retrieveAllSchemas } from '../catalog/catalog-api.js';
 import {
   generateChangeAggregateScript,
   generateCreateAggregateScript,
   generateDropAggregateScript,
-} from './sql/aggregate';
+} from './sql/aggregate.js';
 import {
   generateDropMaterializedViewScript,
   generateCreateMaterializedViewScript,
-} from './sql/materialized-view';
-import { generateChangeCommentScript } from './sql/misc';
+} from './sql/materialized-view.js';
+import { generateChangeCommentScript } from './sql/misc.js';
 import {
   generateDropProcedureScript,
   generateCreateProcedureScript,
   generateChangeProcedureOwnerScript,
   generateChangesProcedureRoleGrantsScript,
   generateProcedureRoleGrantsScript,
-} from './sql/procedure';
-import { generateCreateSchemaScript } from './sql/schema';
+} from './sql/procedure.js';
+import { generateCreateSchemaScript } from './sql/schema.js';
+import { generateChangeTableOwnerScript } from './sql/table.js';
 import {
-  generateRenameSequenceScript,
-  generateCreateSequenceScript,
-  generateChangeSequencePropertyScript,
-  SequenceProperties,
-  generateChangesSequenceRoleGrantsScript,
-  generateSequenceRoleGrantsScript,
-} from './sql/sequence';
-import { generateChangeTableOwnerScript } from './sql/table';
-import { generateDropViewScript, generateCreateViewScript } from './sql/view';
-import { Config } from '../config';
+  generateDropViewScript,
+  generateCreateViewScript,
+} from './sql/view.js';
+import { Config } from '../config.js';
+import { compareSequences } from './sequence.js';
 
 export async function compare(config: Config, eventEmitter: EventEmitter) {
   eventEmitter.emit('compare', 'Compare started', 0);
   eventEmitter.emit('compare', 'Connecting to source database ...', 10);
-  const pgSourceClient = new Client({
+  const pgSourceClient = new pg.Client({
     user: config.sourceClient.user,
     host: config.sourceClient.host,
     database: config.sourceClient.database,
@@ -81,7 +75,7 @@ export async function compare(config: Config, eventEmitter: EventEmitter) {
   );
 
   eventEmitter.emit('compare', 'Connecting to target database ...', 20);
-  const pgTargetClient = new Client({
+  const pgTargetClient = new pg.Client({
     user: config.targetClient.user,
     host: config.targetClient.host,
     database: config.targetClient.database,
@@ -715,158 +709,6 @@ export function compareProcedurePrivileges(
     } else {
       //Procedure grants for role not exists on target database, then generate script to add role privileges
       lines.push(generateProcedureRoleGrantsScript(schema, role));
-    }
-  }
-
-  return lines;
-}
-
-export function compareSequences(
-  config: Config,
-  sourceSequences: Record<string, Sequence>,
-  targetSequences: Record<string, Sequence>,
-) {
-  const lines: Sql[] = [];
-  for (const sequence in sourceSequences) {
-    const sourceObj = sourceSequences[sequence];
-    const targetSequence =
-      findRenamedSequenceOwnedByTargetTableColumn(
-        sequence,
-        sourceObj.ownedBy,
-        targetSequences,
-      ) ?? sequence;
-    const targetObj = targetSequences[targetSequence];
-
-    if (targetObj) {
-      //Sequence exists on both database, then compare sequence definition
-      if (sequence !== targetSequence)
-        lines.push(
-          generateRenameSequenceScript(targetSequence, `"${sourceObj.name}"`),
-        );
-
-      lines.push(
-        ...compareSequenceDefinition(config, sequence, sourceObj, targetObj),
-      );
-
-      lines.push(
-        ...compareSequencePrivileges(
-          sequence,
-          sourceObj.privileges,
-          targetObj.privileges,
-        ),
-      );
-
-      if (sourceObj.comment != targetObj.comment)
-        lines.push(
-          generateChangeCommentScript(
-            sourceObj.id,
-            objectType.SEQUENCE,
-            sequence,
-            sourceObj.comment,
-          ),
-        );
-    } else {
-      //Sequence not exists on target database, then generate the script to create sequence
-      lines.push(
-        generateCreateSequenceScript(
-          sourceObj,
-          config.compareOptions.mapRole(sourceObj.owner),
-        ),
-      );
-      if (sourceObj.comment) {
-        lines.push(
-          generateChangeCommentScript(
-            sourceObj.id,
-            objectType.SEQUENCE,
-            sequence,
-            sourceObj.comment,
-          ),
-        );
-      }
-    }
-
-    //TODO: @mso -> add a way to drop missing sequence if exists only on target db
-  }
-
-  return lines;
-}
-
-export function findRenamedSequenceOwnedByTargetTableColumn(
-  sequenceName: string,
-  ownedBy: string | null,
-  targetSequences: Record<string, Sequence>,
-) {
-  for (let sequence in targetSequences.sequences) {
-    if (
-      targetSequences[sequence].ownedBy == ownedBy &&
-      sequence != sequenceName
-    ) {
-      return sequence;
-    }
-  }
-  return null;
-}
-
-export function compareSequenceDefinition(
-  config: Config,
-  sequence: string,
-  sourceSequenceDefinition: Sequence,
-  targetSequenceDefinition: Sequence,
-) {
-  const lines: Sql[] = [];
-  const props: SequenceProperties[] = [
-    'startValue',
-    'minValue',
-    'maxValue',
-    'increment',
-    'cacheSize',
-    'isCycle',
-    'owner',
-  ];
-  for (const p of props) {
-    const sourceObj = sourceSequenceDefinition[p];
-    const targetObj = targetSequenceDefinition[p];
-    if (sourceObj === targetObj) {
-      continue;
-    }
-    let value = sourceObj + '';
-    if (p === 'owner') {
-      value = config.compareOptions.mapRole(sourceObj as string);
-    }
-    lines.push(generateChangeSequencePropertyScript(sequence, p, value));
-  }
-  return lines;
-}
-
-export function compareSequencePrivileges(
-  sequence: string,
-  sourceSequencePrivileges: Record<string, SequencePrivileges>,
-  targetSequencePrivileges: Record<string, SequencePrivileges>,
-) {
-  const lines: Sql[] = [];
-
-  for (const role in sourceSequencePrivileges) {
-    const sourceObj = sourceSequencePrivileges[role];
-    const targetObj = targetSequencePrivileges[role];
-    //Get new or changed role privileges
-    if (targetObj) {
-      //Sequence privileges for role exists on both database, then compare privileges
-      let changes: ColumnChanges = {};
-      if (sourceObj.select != targetObj.select)
-        changes.select = sourceObj.select;
-
-      if (sourceObj.usage != targetObj.usage) changes.usage = sourceObj.usage;
-
-      if (sourceObj.update != targetObj.update)
-        changes.update = sourceObj.update;
-
-      if (Object.keys(changes).length > 0)
-        lines.push(
-          generateChangesSequenceRoleGrantsScript(sequence, role, changes),
-        );
-    } else {
-      //Sequence grants for role not exists on target database, then generate script to add role privileges
-      lines.push(generateSequenceRoleGrantsScript(sequence, role, sourceObj));
     }
   }
 

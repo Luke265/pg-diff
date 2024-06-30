@@ -1,6 +1,6 @@
-import { declaration, stmt } from '../stmt';
-import { FunctionDefinition } from '../../catalog/database-objects';
-import { hints } from './misc';
+import { declaration, stmt } from '../stmt.js';
+import { FunctionDefinition } from '../../catalog/database-objects.js';
+import { hints } from './misc.js';
 
 const PROCEDURE_TYPE = {
   p: 'PROCEDURE',

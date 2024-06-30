@@ -1,13 +1,13 @@
-import { sourceDb, targetDb } from './setup-db';
+import { sourceDb, targetDb } from './setup-db.js';
 import fs from 'fs';
 import path from 'path';
 import EventEmitter from 'events';
-import { Config } from 'apps/pg-diff/src/config';
+import { Config } from 'apps/pg-diff/src/config.js';
 import {
   collectDatabaseObject,
   compareDatabaseObjects,
-} from 'apps/pg-diff/src/compare';
-import { sortByDependencies } from 'apps/pg-diff/src/utils';
+} from 'apps/pg-diff/src/compare/index.js';
+import { sortByDependencies } from 'apps/pg-diff/src/utils.js';
 
 export async function compare(dir: string) {
   await sourceDb().query(

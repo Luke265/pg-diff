@@ -1,7 +1,10 @@
-import { stmt } from '../stmt';
-import { Sequence, SequencePrivileges } from '../../catalog/database-objects';
-import { hints } from './misc';
-import { SequenceChanges, buildGrants } from '../utils';
+import { stmt } from '../stmt.js';
+import {
+  Sequence,
+  SequencePrivileges,
+} from '../../catalog/database-objects.js';
+import { hints } from './misc.js';
+import { SequenceChanges, buildGrants } from '../utils.js';
 
 export type SequenceProperties =
   | 'startValue'
@@ -27,13 +30,6 @@ export function generateSequenceGrantsDefinition(
         type === 'GRANT' ? 'TO' : 'FROM'
       } ${role};${hints.potentialRoleMissing}`,
   );
-}
-
-export function generateSetSequenceValueScript(
-  tableName: string,
-  sequence: any,
-) {
-  return stmt`SELECT setval(pg_get_serial_sequence('${tableName}', '${sequence.attname}'), max("${sequence.attname}"), true) FROM ${tableName};`;
 }
 
 function sequencePropertyMap(property: SequenceProperties, value: string) {

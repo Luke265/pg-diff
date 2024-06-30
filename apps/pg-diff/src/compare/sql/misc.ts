@@ -1,4 +1,4 @@
-import { dependency, stmt } from '../stmt';
+import { dependency, stmt } from '../stmt.js';
 
 export function generateChangeCommentScript(
   id: number | string,

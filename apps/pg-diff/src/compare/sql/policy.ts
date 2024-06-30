@@ -1,5 +1,5 @@
-import { dependency, stmt } from '../stmt';
-import { Policy } from '../../catalog/database-objects';
+import { dependency, stmt } from '../stmt.js';
+import { Policy } from '../../catalog/database-objects.js';
 
 const POLICY_FOR = {
   '*': 'ALL',

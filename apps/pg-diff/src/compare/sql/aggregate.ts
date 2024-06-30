@@ -1,6 +1,6 @@
-import { stmt } from '../stmt';
-import { AggregateDefinition } from '../../catalog/database-objects';
-import { generateProcedureGrantsDefinition } from './procedure';
+import { stmt } from '../stmt.js';
+import { AggregateDefinition } from '../../catalog/database-objects.js';
+import { generateProcedureGrantsDefinition } from './procedure.js';
 
 export function generateCreateAggregateScript(schema: AggregateDefinition) {
   const privileges = Object.entries(schema.privileges)

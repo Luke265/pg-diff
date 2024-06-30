@@ -1,7 +1,7 @@
 import { ClientBase } from 'pg';
-import { ServerVersion } from './server-version';
-import { DataTypeCategory } from './database-objects';
-import { checkServerCompatibility } from './utils';
+import { ServerVersion } from './server-version.js';
+import { DataTypeCategory } from './database-objects.js';
+import { checkServerCompatibility } from './utils.js';
 
 export async function getAllSchemaNames(client: ClientBase) {
   //TODO: Instead of using ::regrole casting, for better performance join with pg_roles

@@ -1,10 +1,10 @@
 import { ClientBase } from 'pg';
-import { ServerVersion } from './catalog/server-version';
-import { Sql } from './compare/stmt';
+import { ServerVersion } from './catalog/server-version.js';
+import { Sql } from './compare/stmt.js';
 import path from 'path';
 import fs from 'fs';
 import { execSync } from 'child_process';
-import { Config } from './config';
+import { Config } from './config.js';
 
 export function sortByDependencies(items: Sql[]): Sql[] {
   // Create a map of declarations to items
