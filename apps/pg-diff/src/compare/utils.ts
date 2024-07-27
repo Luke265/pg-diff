@@ -1,16 +1,16 @@
-import { SqlRef } from './stmt.js';
-
 export function commentIsEqual(
   a: string | null | undefined,
   b: string | null | undefined,
 ) {
   return a === b || (!a && !b);
 }
+
 export interface SequenceChanges {
   select?: boolean;
   usage?: boolean;
   update?: boolean;
 }
+
 export interface ColumnChanges extends PrivilegeChanges {
   datatype?: string;
   dataTypeID?: number;

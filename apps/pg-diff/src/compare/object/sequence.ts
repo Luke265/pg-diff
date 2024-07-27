@@ -1,7 +1,10 @@
-import { Sequence, SequencePrivileges } from '../catalog/database-objects.js';
-import { Config } from '../config.js';
-import objectType from '../enums/object-type.js';
-import { generateChangeCommentScript } from './sql/misc.js';
+import {
+  Sequence,
+  SequencePrivileges,
+} from '../../catalog/database-objects.js';
+import { Config } from '../../config.js';
+import objectType from '../../enums/object-type.js';
+import { generateChangeCommentScript } from '../sql/misc.js';
 import {
   SequenceProperties,
   generateChangeSequencePropertyScript,
@@ -9,9 +12,9 @@ import {
   generateCreateSequenceScript,
   generateRenameSequenceScript,
   generateSequenceRoleGrantsScript,
-} from './sql/sequence.js';
-import { Sql } from './stmt.js';
-import { ColumnChanges } from './utils.js';
+} from '../sql/sequence.js';
+import { Sql } from '../stmt.js';
+import { ColumnChanges } from '../utils.js';
 
 export function compareSequences(
   config: Config,

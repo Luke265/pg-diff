@@ -60,7 +60,7 @@ export function sortByDependencies(items: Sql[]): Sql[] {
       }
     });
   }
-  //ase
+
   // Check if there was a cycle (not all items were sorted)
   if (sorted.length !== items.length) {
     throw new Error('There is a cycle in the dependencies');

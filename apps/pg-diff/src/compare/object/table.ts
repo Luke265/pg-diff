@@ -1,5 +1,5 @@
 import _ from 'lodash';
-import objectType from '../enums/object-type.js';
+import objectType from '../../enums/object-type.js';
 import {
   TableObject,
   DatabaseObjects,
@@ -9,18 +9,18 @@ import {
   Policy,
   Column,
   Privileges,
-} from '../catalog/database-objects.js';
-import { Sql, stmt } from './stmt.js';
-import { commentIsEqual, ColumnChanges } from './utils.js';
+} from '../../catalog/database-objects.js';
+import { Sql, stmt } from '../stmt.js';
+import { commentIsEqual, ColumnChanges } from '../utils.js';
 import {
   generateAddTableColumnScript,
   generateDropTableColumnScript,
   generateChangeTableColumnScript,
-} from './sql/column.js';
-import { generateDropIndexScript } from './sql/index-db.js';
-import { generateDropMaterializedViewScript } from './sql/materialized-view.js';
-import { generateChangeCommentScript } from './sql/misc.js';
-import { dropPolicy, createPolicy } from './sql/policy.js';
+} from '../sql/column.js';
+import { generateDropIndexScript } from '../sql/index-db.js';
+import { generateDropMaterializedViewScript } from '../sql/materialized-view.js';
+import { generateChangeCommentScript } from '../sql/misc.js';
+import { dropPolicy, createPolicy } from '../sql/policy.js';
 import {
   generateChangeTableOwnerScript,
   generateCreateTableScript,
@@ -30,9 +30,9 @@ import {
   generateAddTableConstraintScript,
   generateChangesTableRoleGrantsScript,
   generateTableRoleGrantsScript,
-} from './sql/table.js';
-import { generateDropViewScript } from './sql/view.js';
-import { Config } from '../config.js';
+} from '../sql/table.js';
+import { generateDropViewScript } from '../sql/view.js';
+import { Config } from '../../config.js';
 
 export function compareTables(
   sourceTables: Record<string, TableObject>,
@@ -263,32 +263,6 @@ function compareTableColumn(
 
   if (Object.keys(changes).length > 0) {
     let rawColumnName = columnName.substring(1).slice(0, -1);
-
-    /* //Check if the column has constraint
-      for (let constraint in targetTable.constraints) {
-        const targetObj = targetTable.constraints[constraint];
-        if (droppedConstraints.includes(constraint)) continue;
-
-        let constraintDefinition = targetObj.definition;
-        let searchStartingIndex = constraintDefinition.indexOf('(');
-
-        if (
-          constraintDefinition.includes(
-            `${rawColumnName},`,
-            searchStartingIndex
-          ) ||
-          constraintDefinition.includes(
-            `${rawColumnName})`,
-            searchStartingIndex
-          ) ||
-          constraintDefinition.includes(`${columnName}`, searchStartingIndex)
-        ) {
-          sqlScript.push(
-            generateDropTableConstraintScript(table, targetObj)
-          );
-          droppedConstraints.push(constraint);
-        }
-      }*/
 
     //Check if the column is part of indexes
     for (let index in targetTable.indexes) {
@@ -525,6 +499,7 @@ export function compareTableIndexes(
 
   return lines;
 }
+
 export function compareTablePolicies(
   config: Config,
   table: TableObject,

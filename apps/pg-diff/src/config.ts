@@ -1,5 +1,3 @@
-import { TableDefinition } from './compare/table-definition.js';
-
 export interface Config {
   targetClient: ClientConfig;
   sourceClient: ClientConfig;
@@ -16,10 +14,6 @@ export interface Config {
       dropMissingFunction: boolean;
       dropMissingAggregate: boolean;
       roles: string[];
-    };
-    dataCompare: {
-      enable: boolean;
-      tables: TableDefinition[];
     };
   };
   migrationOptions: {

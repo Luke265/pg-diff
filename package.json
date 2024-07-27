@@ -2,28 +2,6 @@
   "name": "@pg-diff3/source",
   "version": "0.0.0",
   "license": "MIT",
-  "nx": {
-    "targets": {
-      "build-tools": {
-        "executor": "@nx/esbuild:esbuild",
-        "outputs": [
-          "{options.outputPath}"
-        ],
-        "defaultConfiguration": "production",
-        "options": {
-          "platform": "node",
-          "outputPath": "dist/tools",
-          "format": [
-            "esm"
-          ],
-          "bundle": false,
-          "generatePackageJson": false,
-          "main": "tools/publish.ts",
-          "tsConfig": "tsconfig.tools.json"
-        }
-      }
-    }
-  },
   "scripts": {},
   "private": true,
   "dependencies": {
@@ -32,31 +10,31 @@
     "tslib": "^2.6.3"
   },
   "devDependencies": {
-    "@nx/esbuild": "19.3.0",
-    "@nx/eslint": "19.3.0",
-    "@nx/eslint-plugin": "19.3.0",
-    "@nx/jest": "19.3.0",
-    "@nx/js": "19.3.0",
-    "@nx/node": "19.3.0",
-    "@nx/workspace": "19.3.0",
-    "@swc-node/register": "~1.9.2",
-    "@swc/core": "~1.6.0",
-    "@swc/helpers": "~0.5.11",
+    "@nx/esbuild": "19.5.1",
+    "@nx/eslint": "19.5.1",
+    "@nx/eslint-plugin": "19.5.1",
+    "@nx/jest": "19.5.1",
+    "@nx/js": "19.5.1",
+    "@nx/node": "19.5.1",
+    "@nx/workspace": "19.5.1",
+    "@swc-node/register": "~1.10.9",
+    "@swc/core": "~1.7.0",
+    "@swc/helpers": "~0.5.12",
     "@types/jest": "^29.5.12",
-    "@types/lodash": "^4.17.5",
-    "@types/node": "~20.14.2",
+    "@types/lodash": "^4.17.7",
+    "@types/node": "~20.14.11",
     "@types/pg": "^8.11.6",
-    "@typescript-eslint/eslint-plugin": "^7.13.0",
-    "@typescript-eslint/parser": "^7.13.0",
-    "esbuild": "^0.21.5",
+    "@typescript-eslint/eslint-plugin": "7.16.1",
+    "@typescript-eslint/parser": "7.16.1",
+    "esbuild": "^0.23.0",
     "eslint": "~8.57.0",
     "eslint-config-prettier": "^9.1.0",
     "jest": "^29.7.0",
     "jest-environment-node": "^29.7.0",
-    "nx": "19.3.0",
-    "prettier": "^3.3.2",
-    "ts-jest": "^29.1.4",
+    "nx": "19.5.1",
+    "prettier": "^3.3.3",
+    "ts-jest": "^29.2.3",
     "ts-node": "10.9.2",
-    "typescript": "~5.4.5"
+    "typescript": "5.5.3"
   }
 }

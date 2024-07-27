@@ -36,10 +36,6 @@ export async function compare(dir: string) {
         dropMissingAggregate: true,
         roles: [],
       },
-      dataCompare: {
-        enable: false,
-        tables: [],
-      },
     },
   };
   const dbSourceObjects = await collectDatabaseObject(sourceDb(), config);
