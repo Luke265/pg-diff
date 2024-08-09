@@ -282,8 +282,10 @@ export async function retrieveTables(client: ClientBase, config: Config) {
   //Re-order tables based on priority
   const reorderedResult: Record<string, TableObject> = {};
   for (const tableName of tableNamesPriority) {
-    reorderedResult[tableName] = result[tableName];
-    delete result[tableName];
+    if (result[tableName]) {
+      reorderedResult[tableName] = result[tableName];
+      delete result[tableName];
+    }
   }
 
   return { ...reorderedResult, ...result };
