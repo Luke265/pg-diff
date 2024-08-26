@@ -1,6 +1,6 @@
 {
   "name": "pg-diff",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "peerDependencies": {
     "lodash": ">=4",
     "pg": ">=8"

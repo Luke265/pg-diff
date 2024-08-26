@@ -9,7 +9,7 @@ import {
 } from 'apps/pg-diff/src/compare/index.js';
 import { sortByDependencies } from 'apps/pg-diff/src/utils.js';
 
-export async function compare(dir: string) {
+export async function sync(dir: string) {
   await sourceDb().query(
     fs.readFileSync(path.join(dir, 'source.sql')).toString(),
   );
@@ -49,9 +49,20 @@ export async function compare(dir: string) {
   );
 
   const sorted = sortByDependencies(ddl);
-  const result = sorted.join('\n');
+  const result = sorted.join('\n').toString();
   const tmp = path.join('tmp', 'test', dir.replace(__dirname, ''));
   fs.mkdirSync(tmp, { recursive: true });
   fs.writeFileSync(path.join(tmp, 'result.sql'), result);
-  await targetDb().query(result.toString());
+  try {
+    await targetDb().query(result);
+  } catch (e: any) {
+    throw new Error(e.message + '\n' + result);
+  }
+  return result;
+}
+
+export async function compare(dir: string) {
+  const patch = fs.readFileSync(path.join(dir, 'patch.sql')).toString();
+  const resultPatch = await sync(dir);
+  expect(patch).toBe(resultPatch);
 }
