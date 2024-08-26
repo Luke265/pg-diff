@@ -35,7 +35,7 @@ import { generateDropViewScript } from '../sql/view.js';
 import { Config } from '../../config.js';
 
 export function compareTables(
-  sourceTables: Record<string, TableObject>,
+  dbSourceObjects: DatabaseObjects,
   dbTargetObjects: DatabaseObjects,
   droppedConstraints: string[],
   droppedIndexes: string[],
@@ -46,10 +46,9 @@ export function compareTables(
 ) {
   const lines: Sql[] = [];
 
-  for (const sourceTable in sourceTables) {
-    const sourceObj = sourceTables[sourceTable];
+  for (const sourceTable in dbSourceObjects.tables) {
+    const sourceObj = dbSourceObjects.tables[sourceTable];
     const targetObj = dbTargetObjects.tables[sourceTable];
-
     if (targetObj) {
       //Table exists on both database, then compare table schema
       //@mso -> relhadoids has been deprecated from PG v12.0
@@ -135,9 +134,11 @@ export function compareTables(
       ? `"${config.migrationOptions.historyTableSchema}"."${config.migrationOptions.historyTableName}"`
       : '';
 
-    for (let table in dbTargetObjects.tables) {
-      if (!sourceTables[table as any] && table != migrationFullTableName)
-        lines.push(generateDropTableScript(table));
+    for (const table in dbTargetObjects.tables) {
+      if (dbSourceObjects.tables[table] || table === migrationFullTableName) {
+        continue;
+      }
+      lines.push(generateDropTableScript(dbTargetObjects.tables[table]));
     }
   }
 

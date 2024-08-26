@@ -104,7 +104,7 @@ export function compareProcedures(
   }
 
   if (config.compareOptions.schemaCompare.dropMissingFunction)
-    for (let procedure in targetFunctions) {
+    for (const procedure in targetFunctions) {
       for (const procedureArgs in targetFunctions[procedure]) {
         if (
           sourceFunctions[procedure] &&

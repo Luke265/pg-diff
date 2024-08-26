@@ -32,10 +32,10 @@ export function generateColumnDefinition(schema: Column) {
 
   if (schema.generatedColumn) {
     nullableExpression = '';
-    defaultValue = stmt`GENERATED ALWAYS AS ${dependency(
+    defaultValue = stmt`GENERATED ALWAYS AS (${dependency(
       schema.default,
       schema.defaultRefs,
-    )} STORED`;
+    )}) STORED`;
     identityValue = '';
   }
 

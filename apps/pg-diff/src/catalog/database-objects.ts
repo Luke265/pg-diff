@@ -206,6 +206,7 @@ export interface DatabaseObjects {
   tables: Record<string, TableObject>;
   views: Record<string, ViewDefinition>;
   materializedViews: Record<string, MaterializedViewDefinition>;
+  functions: FunctionDefinition[];
   functionMap: Record<string, Record<string, FunctionDefinition>>;
   aggregates: Record<string, Record<string, AggregateDefinition>>;
   sequences: Record<string, Sequence>;

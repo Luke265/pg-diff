@@ -128,7 +128,7 @@ export function compareDatabaseObjects(
 
   sqlPatch.push(
     ...compareTables(
-      dbSourceObjects.tables,
+      dbSourceObjects,
       dbTargetObjects,
       droppedConstraints,
       droppedIndexes,

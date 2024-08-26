@@ -19,6 +19,7 @@ export async function loadCatalog(client: ClientBase, config: Config) {
     schemas: {},
     tables: {},
     views: {},
+    functions: [],
     materializedViews: {},
     functionMap: {},
     aggregates: {},
@@ -39,6 +40,7 @@ export async function loadCatalog(client: ClientBase, config: Config) {
     client,
     config,
   );
+  dbObjects.functions = functionList;
   dbObjects.functionMap = functionMap;
   const tableIdMap = Object.values(dbObjects.tables).map(
     (t) => [t.id, `${t.schema}.${t.name}`] as [number, string],

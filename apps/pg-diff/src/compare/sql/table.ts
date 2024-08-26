@@ -176,6 +176,8 @@ export function generateChangeTableOptionsScript(
   } OIDS;`;
 }
 
-export function generateDropTableScript(table: string) {
-  return stmt`DROP TABLE IF EXISTS ${table};`;
+export function generateDropTableScript(table: TableObject) {
+  const s = stmt`DROP TABLE IF EXISTS ${declaration(table.id, table.fullName)};`;
+  s.weight = 1;
+  return s;
 }
