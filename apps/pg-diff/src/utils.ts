@@ -26,8 +26,17 @@ export function sortByDependencies(items: Sql[]): Sql[] {
   // Populate in-degree map and adjacency list
   items.forEach((item) => {
     item.dependencies.forEach((dep) => {
-      const depItem = declarationMap.get(dep);
-      if (depItem) {
+      if (item.declarations.includes(dep.id)) {
+        return;
+      }
+      const depItem = declarationMap.get(dep.id);
+      if (!depItem) {
+        return;
+      }
+      if (dep.reverse) {
+        adjList.get(depItem)!!.push(item);
+        inDegree.set(item, inDegree.get(item)!! - 1);
+      } else {
         adjList.get(depItem)!!.push(item);
         inDegree.set(item, inDegree.get(item)!! + 1);
       }
@@ -39,11 +48,13 @@ export function sortByDependencies(items: Sql[]): Sql[] {
   const queue: Sql[] = [];
 
   // Find all items with no dependencies (in-degree of 0)
-  inDegree.forEach((degree, item) => {
-    if (degree === 0) {
-      queue.push(item);
-    }
-  });
+  Array.from(inDegree.entries())
+    .sort(([_, a], [_0, b]) => a - b)
+    .forEach(([item, degree]) => {
+      if (degree <= 0) {
+        queue.push(item);
+      }
+    });
 
   while (queue.length > 0) {
     const item = queue.shift();

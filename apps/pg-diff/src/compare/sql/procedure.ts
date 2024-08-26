@@ -1,4 +1,4 @@
-import { declaration, stmt } from '../stmt.js';
+import { declaration, dependency, reverseDependency, stmt } from '../stmt.js';
 import { FunctionDefinition } from '../../catalog/database-objects.js';
 import { hints } from './misc.js';
 
@@ -30,14 +30,16 @@ export function generateCreateProcedureScript(schema: FunctionDefinition) {
     schema.argTypes
   }) OWNER TO ${schema.owner};
   ${privileges.join('\n')}`;
-  st.dependencies.push(...schema.fReferenceIds);
+  st.dependencies.push(
+    ...schema.fReferenceIds.map((id) => ({ id, reverse: false })),
+  );
   return st;
 }
 
 export function generateDropProcedureScript(schema: FunctionDefinition) {
   const s = stmt`DROP ${PROCEDURE_TYPE[schema.type]} IF EXISTS ${
     schema.fullName
-  }(${schema.argTypes});`;
+  }(${schema.argTypes});${reverseDependency('', schema.fReferenceIds)}`;
   s.weight = 1;
   return s;
 }

@@ -1,7 +1,7 @@
 export type RawValue = string | Sql | SqlRef | Declaration | null;
 
 export class Sql {
-  readonly dependencies: (number | string)[] = [];
+  readonly dependencies: { id: number | string; reverse: boolean }[] = [];
   readonly declarations: (number | string)[] = [];
   readonly content: string;
   weight = 0;
@@ -52,7 +52,7 @@ export class Sql {
 export class SqlRef {
   constructor(
     public readonly value: string | Sql | null,
-    public readonly dependencies: (number | string)[],
+    public readonly dependencies: { id: number | string; reverse: boolean }[],
   ) {}
   toString() {
     return this.value;
@@ -99,7 +99,29 @@ export function dependency(
   ...ids: (number | string | (number | string)[])[]
 ): SqlRef;
 export function dependency(value: string | Sql | null, ...ids: any) {
-  return new SqlRef(value, ids.flat());
+  return new SqlRef(
+    value,
+    ids.flat().map((id: any) => ({ id, reverse: false })),
+  );
+}
+
+export function reverseDependency(
+  value: string | Sql | null,
+  ids: number | string,
+): SqlRef;
+export function reverseDependency(
+  value: string | Sql | null,
+  ids: (number | string)[],
+): SqlRef;
+export function reverseDependency(
+  value: string | Sql | null,
+  ...ids: (number | string | (number | string)[])[]
+): SqlRef;
+export function reverseDependency(value: string | Sql | null, ...ids: any) {
+  return new SqlRef(
+    value,
+    ids.flat().map((id: any) => ({ id, reverse: true })),
+  );
 }
 
 export function declaration(id: number, value: string | Sql) {
