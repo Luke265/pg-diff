@@ -1,11 +1,24 @@
 export type RawValue = string | Sql | SqlRef | Declaration | null;
 
+export type Id = number | string;
+interface Dependency {
+  id: Id;
+  reverse: boolean;
+}
 export class Sql {
-  readonly dependencies: { id: number | string; reverse: boolean }[] = [];
-  readonly declarations: (number | string)[] = [];
-  readonly content: string;
-  weight = 0;
+  constructor(
+    public readonly dependencies: Dependency[],
+    public readonly declarations: Id[],
+    public readonly content: string,
+    public readonly weight: number,
+  ) {}
 
+  toString() {
+    return this.content;
+  }
+}
+
+export class SqlTag extends Sql {
   constructor(rawStrings: readonly string[], rawValues: readonly RawValue[]) {
     if (rawStrings.length - 1 !== rawValues.length) {
       if (rawStrings.length === 0) {
@@ -22,6 +35,8 @@ export class Sql {
     let p = 0;
     const _content = new Array(rawStrings.length + rawValues.length);
     _content[p++] = rawStrings[0];
+    const dependencies = [];
+    const declarations = [];
     while (i < rawValues.length) {
       let child = rawValues[i++];
       const rawString = rawStrings[i];
@@ -30,18 +45,19 @@ export class Sql {
       }
       _content[p++] = rawString;
       if (child instanceof SqlRef) {
-        this.dependencies.push(...child.dependencies);
+        dependencies.push(...child.dependencies);
         child = child.value;
       }
       if (child instanceof Declaration) {
-        this.declarations.push(child.id);
+        declarations.push(child.id);
         child = child.value;
       }
       if (child instanceof Sql) {
-        this.dependencies.push(...child.dependencies);
+        dependencies.push(...child.dependencies);
       }
     }
-    this.content = _content.join('');
+    const content = _content.join('');
+    super(dependencies, declarations, content, 0);
   }
 
   toString() {
@@ -69,21 +85,83 @@ class Declaration {
   }
 }
 
+export function statement(options: {
+  sql: string | Sql | (Sql | string)[];
+  dependencies?: Id[];
+  declarations?: Id[];
+  reverse?: Id[];
+  weight?: number;
+}) {
+  const dependencies: Dependency[] = [];
+  const declarations: Id[] = [];
+  let out = '';
+  if (typeof options.sql === 'string') {
+    out = options.sql;
+  } else if (options.sql instanceof Sql) {
+    out = options.sql.toString();
+  } else {
+    out = options.sql
+      .map((s) => {
+        if (s === '' || !s) {
+          return '';
+        }
+        if (s instanceof Sql) {
+          dependencies.push(...s.dependencies);
+          declarations.push(...s.declarations);
+        }
+        return s.toString() + ' ';
+      })
+      .join('');
+  }
+  if (options.dependencies) {
+    dependencies.push(
+      ...options.dependencies.map((id) => ({ id, reverse: false })),
+    );
+  }
+  if (options.reverse) {
+    dependencies.push(...options.reverse.map((id) => ({ id, reverse: true })));
+  }
+  if (options.declarations) {
+    declarations.push(...options.declarations);
+  }
+  return new Sql(dependencies, declarations, out, options.weight ?? 0);
+}
+
 export function stmt(
   strings: readonly string[],
   ...values: readonly RawValue[]
 ) {
-  return new Sql(strings, values);
+  return new SqlTag(strings, values);
 }
 
 export function join(strings: readonly Sql[], separator: string) {
   if (strings.length === 0) {
     return null;
   }
-  return new Sql(
+  return new SqlTag(
     ['', ...Array(strings.length - 1).fill(separator), ''],
     strings,
   );
+}
+
+export function joinStmt(
+  sql: (string | Sql)[],
+  strings: readonly (Sql | string)[],
+  separator: string,
+) {
+  if (strings.length === 0) {
+    return null;
+  }
+  let i = 0;
+  let last = strings.length - 1;
+  for (const s of strings) {
+    sql.push(s);
+    if (i !== last) {
+      sql.push(separator);
+    }
+    i++;
+  }
+  return sql;
 }
 
 export function dependency(

@@ -23,6 +23,7 @@ import {
   getTablePolicies,
   getTypes,
   getDomains,
+  getTableTriggers,
 } from './introspection.js';
 import {
   AggregateDefinition,
@@ -138,6 +139,7 @@ export async function retrieveTables(client: ClientBase, config: Config) {
         options: {},
         indexes: {},
         privileges: {},
+        triggers: {},
         policies: {},
         owner: table.tableowner,
         comment: table.comment,
@@ -262,6 +264,8 @@ export async function retrieveTables(client: ClientBase, config: Config) {
         def.policies[row.polname] = {
           id: row.id,
           relid: row.polrelid,
+          table: table.tablename,
+          schema: table.schemaname,
           using,
           withCheck,
           dependencies: [],
@@ -272,8 +276,32 @@ export async function retrieveTables(client: ClientBase, config: Config) {
           for: row.polcmd,
         };
       });
+
+      const triggers = await getTableTriggers(
+        client,
+        table.schemaname,
+        table.tablename,
+      );
+      triggers.rows.forEach((row) => {
+        def.triggers[row.tgname] = {
+          id: row.id,
+          name: row.tgname,
+          tableId: row.tgrelid,
+          functionId: row.tgfoid,
+          oldTable: row.tgoldtable,
+          newTable: row.tgnewtable,
+          comment: row.comment,
+          actionStatement: row.action_statement,
+          actionOrientation: row.action_orientation,
+          actionTiming: row.action_timing,
+          attributes: row.attributes,
+          eventManipulation: row.event_manipulation,
+          whenExpr: row.when_expr,
+          table: row.table,
+          schema: row.schema,
+        };
+      });
       //TODO: Missing discovering of PARTITION
-      //TODO: Missing discovering of TRIGGER
       //TODO: Missing discovering of GRANTS for COLUMNS
       //TODO: Missing discovering of WITH GRANT OPTION, that is used to indicate if user\role can add GRANTS to other users
     }),

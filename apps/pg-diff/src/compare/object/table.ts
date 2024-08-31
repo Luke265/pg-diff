@@ -9,6 +9,7 @@ import {
   Policy,
   Column,
   Privileges,
+  Trigger,
 } from '../../catalog/database-objects.js';
 import { Sql, stmt } from '../stmt.js';
 import { commentIsEqual, ColumnChanges } from '../utils.js';
@@ -33,6 +34,7 @@ import {
 } from '../sql/table.js';
 import { generateDropViewScript } from '../sql/view.js';
 import { Config } from '../../config.js';
+import { createTrigger, dropTrigger } from '../sql/trigger.js';
 
 export function compareTables(
   dbSourceObjects: DatabaseObjects,
@@ -521,10 +523,10 @@ export function compareTablePolicies(
       _.isEqual(roles, targetObj.roles);
     if (!isSame) {
       if (targetObj) {
-        lines.push(dropPolicy(table.schema, table.name, name));
+        lines.push(dropPolicy(targetObj));
       }
       lines.push(
-        createPolicy(table.schema, table.name, {
+        createPolicy({
           ...sourceObj,
           roles,
         }),
@@ -547,7 +549,55 @@ export function compareTablePolicies(
     if (source[name]) {
       continue;
     }
-    lines.push(dropPolicy(table.schema, table.name, name));
+    const targetObj = target[name];
+    lines.push(dropPolicy(targetObj));
+  }
+
+  return lines;
+}
+
+export function compareTableTriggers(
+  config: Config,
+  table: TableObject,
+  source: Record<string, Trigger>,
+  target: Record<string, Trigger>,
+) {
+  const lines: Sql[] = [];
+  for (const name in source) {
+    const sourceObj = source[name];
+    const targetObj = target[name];
+    const isSame =
+      targetObj &&
+      sourceObj.actionOrientation === targetObj.actionOrientation &&
+      sourceObj.actionStatement === targetObj.actionStatement &&
+      sourceObj.actionTiming === targetObj.actionTiming &&
+      sourceObj.whenExpr === targetObj.whenExpr &&
+      _.isEqual(sourceObj.eventManipulation, targetObj.eventManipulation);
+    if (!isSame) {
+      if (targetObj) {
+        lines.push(dropTrigger(targetObj));
+      }
+      lines.push(createTrigger(sourceObj));
+    }
+    if (!commentIsEqual(sourceObj.comment, targetObj?.comment)) {
+      lines.push(
+        generateChangeCommentScript(
+          sourceObj.id,
+          objectType.TRIGGER,
+          name,
+          sourceObj.comment,
+          table.fullName,
+        ),
+      );
+    }
+  }
+
+  for (const name in target) {
+    if (source[name]) {
+      continue;
+    }
+    const targetObj = target[name];
+    lines.push(dropTrigger(targetObj));
   }
 
   return lines;

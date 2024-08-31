@@ -129,7 +129,27 @@ export interface Policy {
   dependencies: (string | number)[];
   withCheck: string | null;
   roles: string[];
+  schema: string;
+  table: string;
 }
+export interface Trigger {
+  id: number;
+  name: string;
+  tableId: number;
+  functionId: number;
+  oldTable: string | null;
+  newTable: string | null;
+  actionStatement: string;
+  actionOrientation: 'ROW' | 'STATEMENT';
+  actionTiming: 'BEFORE' | 'AFTER' | 'INSTEAD OF';
+  attributes: string[];
+  eventManipulation: ('INSERT' | 'UPDATE' | 'DELETE')[];
+  whenExpr: string | null;
+  table: string;
+  schema: string;
+  comment: string;
+}
+
 export interface TableObject {
   id: number;
   schema: string;
@@ -140,6 +160,7 @@ export interface TableObject {
   options: TableOptions;
   indexes: Record<string, IndexDefinition>;
   policies: Record<string, Policy>;
+  triggers: Record<string, Trigger>;
   privileges: Record<string, Privileges>;
   owner: string;
   comment: string | null;

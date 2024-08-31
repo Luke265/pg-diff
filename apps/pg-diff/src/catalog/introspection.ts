@@ -572,6 +572,82 @@ export function getTablePolicies(
                   WHERE n.nspname = '${schema}' AND t.relname = '${table}'`);
 }
 
+export interface TriggerRow {
+  id: number;
+  tgname: string;
+  tgrelid: number;
+  tgfoid: number;
+  tgoldtable: string | null;
+  tgnewtable: string | null;
+  action_statement: string;
+  action_orientation: 'ROW' | 'STATEMENT';
+  action_timing: 'BEFORE' | 'AFTER' | 'INSTEAD OF';
+  attributes: string[];
+  event_manipulation: ('INSERT' | 'UPDATE' | 'DELETE')[];
+  when_expr: string | null;
+  table: string;
+  schema: string;
+  comment: string;
+}
+export function getTableTriggers(
+  client: ClientBase,
+  schema: string,
+  table: string,
+) {
+  //TODO: Instead of using ::regrole casting, for better performance join with pg_roles
+  return client.query<TriggerRow>(`SELECT
+    t.oid AS id,
+    t.tgname,
+    t.tgrelid,
+    t.tgfoid,
+    t.tgoldtable,
+    t.tgnewtable,
+    t.tgattr,
+    (CASE t.tgtype & 1 WHEN 1 THEN 'ROW' ELSE 'STATEMENT' END)
+                       AS action_orientation,
+    ARRAY ((
+            SELECT
+                at.attname
+            FROM
+                pg_attribute at
+            WHERE
+                attnum = ANY (t.tgattr)
+                AND at.attrelid = tp.oid))::TEXT[] AS attributes,
+    (
+        CASE t.tgtype & 66
+        WHEN 2 THEN
+            'BEFORE'
+        WHEN 64 THEN
+            'INSTEAD OF'
+        ELSE
+            'AFTER'
+        END) AS action_timing,
+        substring(pg_get_triggerdef(t.oid) from
+                       position('EXECUTE FUNCTION' in substring(pg_get_triggerdef(t.oid) from 48)) + 47)
+             AS action_statement,
+    ARRAY ((
+            SELECT
+                text
+            FROM (
+                VALUES (4, 'INSERT'),
+                    (8, 'DELETE'),
+                    (16, 'UPDATE')) AS em (num, text)
+            WHERE
+                t.tgtype & em.num <> 0))::TEXT[] AS event_manipulation,
+    (regexp_match(pg_get_triggerdef(t.oid), E'.{35,} WHEN \\((.+)\\) EXECUTE FUNCTION'))[1] AS when_expr,
+    n.nspname AS schema,
+    tp.relname AS table,
+    d.description AS comment
+FROM
+    pg_trigger t
+    INNER JOIN pg_class tp ON tp.oid = t.tgrelid
+    INNER JOIN pg_class c ON c."oid" = t.tgrelid
+    INNER JOIN pg_namespace n ON n.oid = c.relnamespace
+    LEFT JOIN pg_description d ON d.objoid = t."oid" AND d.objsubid = 0
+WHERE
+    t.tgisinternal = FALSE AND n.nspname = '${schema}' AND tp.relname = '${table}'`);
+}
+
 export interface FunctionPrivilegeRow {
   pronamespace: string;
   proname: string;

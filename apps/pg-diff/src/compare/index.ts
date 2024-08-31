@@ -18,6 +18,7 @@ import { compareMaterializedViews } from './object/materialized-view.js';
 import { compareProcedures } from './object/procedure.js';
 import { compareAggregates } from './object/aggregate.js';
 import { compareSchemas } from './object/schema.js';
+import { compareTriggers } from './object/trigger.js';
 
 export async function compare(config: Config, eventEmitter: EventEmitter) {
   eventEmitter.emit('compare', 'Compare started', 0);
@@ -193,6 +194,10 @@ export function compareDatabaseObjects(
 
   sqlPatch.push(
     ...comparePolicies(config, dbSourceObjects.tables, dbTargetObjects.tables),
+  );
+
+  sqlPatch.push(
+    ...compareTriggers(config, dbSourceObjects.tables, dbTargetObjects.tables),
   );
 
   return {
