@@ -1,4 +1,4 @@
-import { stmt } from '../stmt.js';
+import { statement } from '../stmt.js';
 import { hints } from './misc.js';
 
 export function generateUpdateTableRecordScript(
@@ -25,9 +25,11 @@ export function generateUpdateTableRecordScript(
     );
   }
 
-  return stmt`UPDATE ${table} SET ${updates.join(', ')} WHERE ${conditions.join(
-    ' AND ',
-  )};`;
+  return statement({
+    sql: `UPDATE ${table} SET ${updates.join(', ')} WHERE ${conditions.join(
+      ' AND ',
+    )};`,
+  });
 }
 
 export function generateInsertTableRecordScript(
@@ -43,12 +45,19 @@ export function generateInsertTableRecordScript(
     fieldValues.push(generateSqlFormattedValue(field, fields, record[field]));
   }
 
-  let script = stmt`INSERT INTO ${table} (${fieldNames.join(', ')}) ${
-    isIdentityValuesAllowed ? '' : 'OVERRIDING SYSTEM VALUE'
-  } VALUES (${fieldValues.join(', ')});`;
-  if (!isIdentityValuesAllowed)
-    return stmt`\n${hints.identityColumnDetected} ${script}`;
-  return script;
+  let sql = [
+    `INSERT INTO ${table} (${fieldNames.join(', ')}) ${
+      isIdentityValuesAllowed ? '' : 'OVERRIDING SYSTEM VALUE'
+    } VALUES (${fieldValues.join(', ')});`,
+  ];
+  if (!isIdentityValuesAllowed) {
+    sql.push('\n');
+    sql.push(hints.identityColumnDetected);
+    sql.push('\n');
+  }
+  return statement({
+    sql,
+  });
 }
 
 export function generateDeleteTableRecordScript(
@@ -67,7 +76,9 @@ export function generateDeleteTableRecordScript(
     );
   }
 
-  return stmt`DELETE FROM ${table} WHERE ${conditions.join(' AND ')};`;
+  return statement({
+    sql: `DELETE FROM ${table} WHERE ${conditions.join(' AND ')};`,
+  });
 }
 
 export function generateSqlFormattedValue(

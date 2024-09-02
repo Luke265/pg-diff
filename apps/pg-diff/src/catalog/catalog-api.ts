@@ -330,6 +330,7 @@ export async function retrieveViews(client: ClientBase, config: Config) {
       const fullViewName = `"${view.schemaname}"."${view.viewname}"`;
       const def: ViewDefinition = (result[fullViewName] = {
         id: view.id,
+        fullName: fullViewName,
         definition: view.definition,
         owner: view.viewowner,
         privileges: {},
@@ -392,6 +393,7 @@ export async function retrieveMaterializedViews(
       const fullViewName = `"${view.schemaname}"."${view.matviewname}"`;
       const def: MaterializedViewDefinition = (result[fullViewName] = {
         id: view.id,
+        fullName: fullViewName,
         definition: view.definition,
         indexes: {},
         owner: view.matviewowner,

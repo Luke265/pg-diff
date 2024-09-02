@@ -11,7 +11,7 @@ import {
   Privileges,
   Trigger,
 } from '../../catalog/database-objects.js';
-import { Sql, stmt } from '../stmt.js';
+import { Sql, statement } from '../stmt.js';
 import { commentIsEqual, ColumnChanges } from '../utils.js';
 import {
   generateAddTableColumnScript,
@@ -57,7 +57,7 @@ export function compareTables(
       if (targetObj.options)
         lines.push(
           ...compareTableOptions(
-            sourceTable,
+            sourceObj,
             sourceObj.options,
             targetObj.options,
           ),
@@ -148,14 +148,14 @@ export function compareTables(
 }
 
 function compareTableOptions(
-  tableName: string,
+  table: TableObject,
   sourceTableOptions: TableOptions,
   targetTableOptions: TableOptions,
 ) {
   if (sourceTableOptions.withOids === targetTableOptions.withOids) {
     return [];
   }
-  return [generateChangeTableOptionsScript(tableName, sourceTableOptions)];
+  return [generateChangeTableOptionsScript(table, sourceTableOptions)];
 }
 
 function compareTableColumns(
@@ -290,7 +290,7 @@ function compareTableColumn(
           fullDependencyName == table.fullName &&
           dependency.columnName == columnName
         ) {
-          lines.push(generateDropViewScript(view));
+          lines.push(generateDropViewScript(dbTargetObjects.views[view]));
           droppedViews.push(view);
         }
       });
@@ -305,7 +305,11 @@ function compareTableColumn(
             fullDependencyName == table.fullName &&
             dependency.columnName == columnName
           ) {
-            lines.push(generateDropMaterializedViewScript(view));
+            lines.push(
+              generateDropMaterializedViewScript(
+                dbTargetObjects.materializedViews[view],
+              ),
+            );
             droppedViews.push(view);
           }
         },
@@ -446,7 +450,11 @@ export function compareTableIndexes(
         if (!droppedIndexes.includes(index)) {
           lines.push(generateDropIndexScript(sourceObj));
         }
-        lines.push(stmt`${sourceObj.definition};`);
+        lines.push(
+          statement({
+            sql: [sourceObj.definition, ';'],
+          }),
+        );
         lines.push(
           generateChangeCommentScript(
             sourceObj.id,
@@ -458,7 +466,11 @@ export function compareTableIndexes(
       } else {
         if (droppedIndexes.includes(index)) {
           //It will recreate a dropped index because changes happens on involved columns
-          lines.push(stmt`${sourceObj.definition};`);
+          lines.push(
+            statement({
+              sql: [sourceObj.definition, ';'],
+            }),
+          );
           lines.push(
             generateChangeCommentScript(
               sourceObj.id,
@@ -481,7 +493,11 @@ export function compareTableIndexes(
       }
     } else {
       //Table index not exists on target database, then generate script to add index
-      lines.push(stmt`${sourceObj.definition};`);
+      lines.push(
+        statement({
+          sql: [sourceObj.definition, ';'],
+        }),
+      );
       lines.push(
         generateChangeCommentScript(
           sourceObj.id,

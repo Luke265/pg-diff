@@ -1,56 +1,51 @@
 import { ColumnChanges } from '../../compare/utils.js';
-import { Sql, dependency, join, stmt } from '../stmt.js';
+import { Id, Sql, statement } from '../stmt.js';
 import { Column } from '../../catalog/database-objects.js';
 import { hints } from './misc.js';
 
 export function generateColumnDataTypeDefinition(schema: ColumnChanges) {
   if (!schema.datatype || !schema.dataTypeID) {
-    return null;
+    throw new Error('Unsupported datatype');
   }
+  let sql = schema.datatype;
   if (schema.precision) {
-    const dataTypeScale = schema.scale ? `,${schema.scale}` : '';
-    return stmt`${dependency(schema.datatype, schema.dataTypeID)}(${
-      schema.precision
-    }${dataTypeScale})`;
+    sql += `(${schema.precision}${schema.scale ? `,${schema.scale}` : ''})`;
   }
-  return stmt`${dependency(schema.datatype, schema.dataTypeID)}`;
+  return statement({ sql, dependencies: [schema.dataTypeID] });
 }
 
-export function generateColumnDefinition(schema: Column) {
-  let nullableExpression = schema.nullable ? 'NULL' : 'NOT NULL';
-
-  let defaultValue: Sql | null = null;
-  if (schema.default)
-    defaultValue = stmt`DEFAULT ${dependency(
-      schema.default,
-      schema.defaultRefs,
-    )}`;
-
-  let identityValue = '';
-  if (schema.identity)
-    identityValue = `GENERATED ${schema.identity} AS IDENTITY`;
-
-  if (schema.generatedColumn) {
-    nullableExpression = '';
-    defaultValue = stmt`GENERATED ALWAYS AS (${dependency(
-      schema.default,
-      schema.defaultRefs,
-    )}) STORED`;
-    identityValue = '';
-  }
-
+export function generateColumnDefinition(schema: Column): Sql {
   const dataType = generateColumnDataTypeDefinition(schema);
-  return stmt`${schema.name} ${dataType} ${nullableExpression} ${defaultValue} ${identityValue}`;
+  const sql = [schema.name, dataType];
+  const dependencies: Id[] = [];
+  if (schema.generatedColumn) {
+    sql.push(`GENERATED ALWAYS AS (${schema.default}) STORED`);
+    dependencies.push(...schema.defaultRefs);
+  } else {
+    sql.push(schema.nullable ? 'NULL' : 'NOT NULL');
+    if (schema.default) {
+      sql.push(`DEFAULT ${schema.default}`);
+      dependencies.push(...schema.defaultRefs);
+    }
+    if (schema.identity) {
+      sql.push(`GENERATED ${schema.identity} AS IDENTITY`);
+    }
+  }
+  return statement({ sql: sql.join(' '), dependencies });
 }
 
 export function generateAddTableColumnScript(table: string, column: Column) {
-  const script = stmt`ALTER TABLE IF EXISTS ${table} ADD COLUMN IF NOT EXISTS ${generateColumnDefinition(
-    column,
-  )};`;
+  const sql = [
+    `ALTER TABLE IF EXISTS ${table} ADD COLUMN IF NOT EXISTS `,
+    generateColumnDefinition(column),
+    ';',
+  ];
   if (!column.nullable && !column.default) {
-    return stmt`${script} ${hints.addColumnNotNullableWithoutDefaultValue}`;
+    sql.push(hints.addColumnNotNullableWithoutDefaultValue);
   }
-  return script;
+  return statement({
+    sql,
+  });
 }
 
 export function generateChangeTableColumnScript(
@@ -58,34 +53,35 @@ export function generateChangeTableColumnScript(
   column: string,
   changes: ColumnChanges,
 ) {
-  let definitions: Sql[] = [];
-  if (changes['nullable'] !== undefined)
-    definitions.push(
-      stmt`ALTER COLUMN ${column} ${
+  const sql: (Sql | string)[] = [`ALTER TABLE IF EXISTS ${table}\n    `];
+  const dependencies: Id[] = [];
+  if (changes.nullable !== undefined)
+    sql.push(
+      `ALTER COLUMN ${column} ${
         changes.nullable ? 'DROP NOT NULL' : 'SET NOT NULL'
       }`,
     );
 
   if (changes.datatype) {
-    definitions.push(stmt`${hints.changeColumnDataType}`);
-    let dataTypeDefinition = generateColumnDataTypeDefinition(changes);
-    definitions.push(
-      stmt`ALTER COLUMN ${column} SET DATA TYPE ${dataTypeDefinition} USING ${column}::${dataTypeDefinition}`,
+    const dataTypeDefinition = generateColumnDataTypeDefinition(changes);
+    sql.push(hints.changeColumnDataType);
+    sql.push('\n    ');
+    sql.push(
+      `ALTER COLUMN ${column} SET DATA TYPE ${dataTypeDefinition} USING ${column}::${dataTypeDefinition}`,
     );
+    dependencies.push(...dataTypeDefinition.dependencies);
   }
 
-  if (changes['default'] !== undefined && changes.defaultRefs) {
-    definitions.push(
-      stmt`ALTER COLUMN ${column} ${
+  if (changes.default !== undefined && changes.defaultRefs) {
+    sql.push(
+      `ALTER COLUMN ${column} ${
         changes.default ? 'SET' : 'DROP'
-      } DEFAULT ${dependency(changes.default, changes.defaultRefs)}`,
+      } DEFAULT ${changes.default}`,
     );
+    dependencies.push(...changes.defaultRefs);
   }
 
-  if (
-    changes['identity'] !== undefined &&
-    changes['isNewIdentity'] !== undefined
-  ) {
+  if (changes.identity !== undefined && changes.isNewIdentity !== undefined) {
     let identityDefinition = '';
     if (changes.identity) {
       //truly values
@@ -98,11 +94,14 @@ export function generateChangeTableColumnScript(
       //falsy values
       identityDefinition = 'DROP IDENTITY IF EXISTS';
     }
-    definitions.push(stmt`ALTER COLUMN ${column} ${identityDefinition}`);
+    sql.push(`ALTER COLUMN ${column} ${identityDefinition}`);
   }
-
+  sql.push(';');
   //TODO: Should we include COLLATE when change column data type?
-  return stmt`ALTER TABLE IF EXISTS ${table}\n\t${join(definitions, ',\n\t')};`;
+  return statement({
+    sql,
+    dependencies,
+  });
 }
 
 export function generateDropTableColumnScript(
@@ -110,7 +109,9 @@ export function generateDropTableColumnScript(
   column: string,
   withoutHint = false,
 ) {
-  return stmt`ALTER TABLE IF EXISTS ${table} DROP COLUMN IF EXISTS ${column} CASCADE;${
-    withoutHint ? '' : hints.dropColumn
-  }`;
+  return statement({
+    sql: `ALTER TABLE IF EXISTS ${table} DROP COLUMN IF EXISTS ${column} CASCADE;${
+      withoutHint ? '' : hints.dropColumn
+    }`,
+  });
 }

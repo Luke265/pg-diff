@@ -14,14 +14,14 @@ import {
   generateSequenceRoleGrantsScript,
 } from '../sql/sequence.js';
 import { Sql } from '../stmt.js';
-import { ColumnChanges } from '../utils.js';
+import { ColumnChanges, SqlResult } from '../utils.js';
 
 export function compareSequences(
   config: Config,
   sourceSequences: Record<string, Sequence>,
   targetSequences: Record<string, Sequence>,
-) {
-  const lines: Sql[] = [];
+): SqlResult[] {
+  const lines: SqlResult[] = [];
   for (const sequence in sourceSequences) {
     const sourceObj = sourceSequences[sequence];
     const targetSequence =
@@ -137,8 +137,8 @@ function compareSequencePrivileges(
   sequence: string,
   sourceSequencePrivileges: Record<string, SequencePrivileges>,
   targetSequencePrivileges: Record<string, SequencePrivileges>,
-) {
-  const lines: Sql[] = [];
+): SqlResult[] {
+  const lines: SqlResult[] = [];
 
   for (const role in sourceSequencePrivileges) {
     const sourceObj = sourceSequencePrivileges[role];

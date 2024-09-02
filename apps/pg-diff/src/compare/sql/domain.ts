@@ -1,28 +1,35 @@
 import { Domain } from '../../catalog/database-objects.js';
-import { declaration, dependency, stmt } from '../stmt.js';
+import { statement } from '../stmt.js';
 
 export function generateDropDomainScript(type: Domain) {
-  return stmt`DROP DOMAIN ${type.fullName};`;
+  return statement({
+    sql: `DROP DOMAIN ${type.fullName};`,
+    before: [type.id],
+  });
 }
 
 export function generateCreateDomainScript(schema: Domain) {
-  return stmt`CREATE DOMAIN ${declaration(
-    schema.id,
-    schema.fullName,
-  )} AS ${dependency(schema.type.fullName, schema.type.id)} ${schema.check};`;
+  return statement({
+    sql: `CREATE DOMAIN ${schema.fullName} AS ${schema.type.fullName} ${schema.check};`,
+    declarations: [schema.id],
+    dependencies: [schema.type.id],
+  });
 }
 
 export function generateChangeDomainOwnerScript(type: Domain, owner: string) {
-  return stmt`ALTER DOMAIN ${dependency(
-    type.fullName,
-    type.id,
-  )} OWNER TO ${owner};`;
+  return statement({
+    sql: `ALTER DOMAIN ${type.fullName} OWNER TO ${owner};`,
+    dependencies: [type.id],
+  });
 }
 
 export function generateChangeDomainCheckScript(type: Domain) {
-  return stmt`ALTER DOMAIN DROP CONSTRAINT ${
-    type.constraintName
-  };\nALTER DOMAIN ${dependency(type.fullName, type.id)} ADD CONSTRAINT ${
-    type.constraintName
-  } ${type.check};`;
+  return statement({
+    sql: `ALTER DOMAIN DROP CONSTRAINT ${
+      type.constraintName
+    };\nALTER DOMAIN ${type.fullName} ADD CONSTRAINT ${
+      type.constraintName
+    } ${type.check};`,
+    dependencies: [type.id],
+  });
 }

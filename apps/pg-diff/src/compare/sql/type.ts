@@ -1,12 +1,16 @@
 import objectType from '../../enums/object-type.js';
-import { Sql, declaration, dependency, join, stmt } from '../stmt.js';
+import { Id, Sql, joinStmt, statement } from '../stmt.js';
 import { Column, Type } from '../../catalog/database-objects.js';
 import { generateColumnDataTypeDefinition } from './column.js';
 import { generateChangeCommentScript } from './misc.js';
 
 export function generateDropTypeScript(type: Type) {
-  return stmt`DROP TYPE ${type.fullName};`;
+  return statement({
+    sql: `DROP TYPE ${type.fullName};`,
+    before: [type.id],
+  });
 }
+
 export function generateCreateTypeScript(schema: Type) {
   const columnArr = Object.values(schema.columns);
   const columns = columnArr.map((obj) => generateTypeColumnDefinition(obj));
@@ -18,47 +22,54 @@ export function generateCreateTypeScript(schema: Type) {
       obj.comment,
     ),
   );
-  let body: Sql;
+  const sql: (string | Sql)[] = [`CREATE TYPE ${schema.fullName} AS `];
   if (schema.enum) {
-    body = stmt`ENUM ('${schema.enum.join("','")}')`;
+    sql.push(`ENUM ('${schema.enum.join("','")}')`);
   } else {
-    body = stmt`(
-        ${join(columns, ',\n\t')}
-        )`;
+    sql.push('(\n    ');
+    joinStmt(sql, columns, ',\n    ');
+    sql.push('\n)');
   }
-  return stmt`CREATE TYPE ${declaration(schema.id, schema.fullName)} AS ${body};
-    ${join(columnsComment, '\n')}`;
+  sql.push(';\n');
+  joinStmt(sql, columnsComment, '\n');
+  return statement({
+    sql,
+    declarations: [schema.id],
+  });
 }
 
 export function generateDropTypeColumnScript(table: Type, column: Column) {
-  return stmt`ALTER TABLE IF EXISTS ${dependency(
-    table.fullName,
-    table.id,
-  )} DROP COLUMN IF EXISTS ${column.name} CASCADE;`;
+  return statement({
+    sql: `ALTER TABLE IF EXISTS ${table.fullName} DROP COLUMN IF EXISTS ${column.name} CASCADE;`,
+    dependencies: [table.id],
+  });
 }
 
 export function generateAddTypeColumnScript(schema: Type, column: Column) {
-  return stmt`ALTER TYPE ${dependency(
-    schema.fullName,
-    schema.id,
-  )} ADD ATTRIBUTE ${generateTypeColumnDefinition(column)};`;
+  return statement({
+    sql: [
+      `ALTER TYPE ${schema.fullName} ADD ATTRIBUTE `,
+      generateTypeColumnDefinition(column),
+      ';',
+    ],
+    dependencies: [schema.id],
+  });
 }
 
 export function generateTypeColumnDefinition(schema: Column) {
-  let defaultValue: Sql | null = null;
+  const dataType = generateColumnDataTypeDefinition(schema);
+  const sql = [schema.name, dataType];
+  const dependencies: Id[] = [];
   if (schema.default) {
-    defaultValue = stmt`DEFAULT ${dependency(
-      schema.default,
-      schema.defaultRefs,
-    )}`;
+    sql.push(`DEFAULT ${schema.default}`);
+    dependencies.push(...schema.defaultRefs);
   }
-  let dataType = generateColumnDataTypeDefinition(schema);
-  return stmt`${schema.name} ${dataType} ${defaultValue}`;
+  return statement({ sql: sql.join(' '), dependencies });
 }
 
 export function generateChangeTypeOwnerScript(type: Type, owner: string) {
-  return stmt`ALTER TYPE ${dependency(
-    type.fullName,
-    type.id,
-  )} OWNER TO ${owner};`;
+  return statement({
+    sql: `ALTER TYPE ${type.fullName} OWNER TO ${owner};`,
+    dependencies: [type.id],
+  });
 }

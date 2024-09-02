@@ -25,21 +25,27 @@ export function sortByDependencies(items: Sql[]): Sql[] {
 
   // Populate in-degree map and adjacency list
   items.forEach((item) => {
-    item.dependencies.forEach((dep) => {
-      if (item.declarations.includes(dep.id)) {
+    item.before.forEach((dep) => {
+      if (item.declarations.includes(dep)) {
         return;
       }
-      const depItem = declarationMap.get(dep.id);
+      const depItem = declarationMap.get(dep);
       if (!depItem) {
         return;
       }
-      if (dep.reverse) {
-        adjList.get(depItem)!!.push(item);
-        inDegree.set(item, inDegree.get(item)!! - 1);
-      } else {
-        adjList.get(depItem)!!.push(item);
-        inDegree.set(item, inDegree.get(item)!! + 1);
+      adjList.get(depItem)!!.push(item);
+      inDegree.set(item, inDegree.get(item)!! - 1);
+    });
+    item.dependencies.forEach((dep) => {
+      if (item.declarations.includes(dep)) {
+        return;
       }
+      const depItem = declarationMap.get(dep);
+      if (!depItem) {
+        return;
+      }
+      adjList.get(depItem)!!.push(item);
+      inDegree.set(item, inDegree.get(item)!! + 1);
     });
   });
 

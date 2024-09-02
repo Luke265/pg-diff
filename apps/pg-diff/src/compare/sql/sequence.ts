@@ -1,10 +1,10 @@
-import { stmt } from '../stmt.js';
 import {
   Sequence,
   SequencePrivileges,
 } from '../../catalog/database-objects.js';
 import { hints } from './misc.js';
 import { SequenceChanges, buildGrants } from '../utils.js';
+import { joinStmt, statement } from '../stmt.js';
 
 export type SequenceProperties =
   | 'startValue'
@@ -24,11 +24,12 @@ export function generateSequenceGrantsDefinition(
     ['SELECT', privileges.select],
     ['USAGE', privileges.usage],
     ['UPDATE', privileges.update],
-  ]).map(
-    ([type, privileges]) =>
-      `${type} ${privileges} ON SEQUENCE ${sequence} ${
+  ]).map(([type, privileges]) =>
+    statement({
+      sql: `${type} ${privileges} ON SEQUENCE ${sequence} ${
         type === 'GRANT' ? 'TO' : 'FROM'
       } ${role};${hints.potentialRoleMissing}`,
+    }),
   );
 }
 
@@ -58,10 +59,12 @@ export function generateChangeSequencePropertyScript(
   property: SequenceProperties,
   value: string,
 ) {
-  return stmt`ALTER SEQUENCE IF EXISTS ${sequence} ${sequencePropertyMap(
-    property,
-    value,
-  )};`;
+  return statement({
+    sql: `ALTER SEQUENCE IF EXISTS ${sequence} ${sequencePropertyMap(
+      property,
+      value,
+    )};`,
+  });
 }
 
 export function generateChangesSequenceRoleGrantsScript(
@@ -69,19 +72,19 @@ export function generateChangesSequenceRoleGrantsScript(
   role: string,
   changes: SequenceChanges,
 ) {
-  const privileges = [
+  return [
     [changes.select, 'SELECT'],
     [changes.usage, 'USAGE'],
     [changes.update, 'UPDATE'],
   ]
     .filter(([defined]) => defined !== undefined)
-    .map(
-      ([defined, type]) =>
-        `${defined ? 'GRANT' : 'REVOKE'} ${type} ON SEQUENCE ${sequence} ${
+    .map(([defined, type]) =>
+      statement({
+        sql: `${defined ? 'GRANT' : 'REVOKE'} ${type} ON SEQUENCE ${sequence} ${
           defined ? 'TO' : 'FROM'
         } ${role};${hints.potentialRoleMissing}`,
+      }),
     );
-  return stmt`${privileges.join('\n')}`;
 }
 
 export function generateSequenceRoleGrantsScript(
@@ -89,7 +92,7 @@ export function generateSequenceRoleGrantsScript(
   role: string,
   privileges: SequencePrivileges,
 ) {
-  return stmt`${generateSequenceGrantsDefinition(sequence, role, privileges).join('\n')}`;
+  return generateSequenceGrantsDefinition(sequence, role, privileges);
 }
 
 export function generateCreateSequenceScript(
@@ -98,34 +101,32 @@ export function generateCreateSequenceScript(
 ) {
   //Generate privileges script
   const fullName = `"${sequence.schema}"."${sequence.name}"`;
-  const privileges: (string | string[])[] = [
-    `ALTER SEQUENCE ${fullName} OWNER TO ${owner};`,
-  ];
-
-  for (const role in sequence.privileges) {
-    privileges.push(
-      generateSequenceGrantsDefinition(
-        fullName,
-        role,
-        sequence.privileges[role],
-      ),
-    );
-  }
-
-  return stmt`
-  CREATE SEQUENCE IF NOT EXISTS ${fullName} 
+  const privileges = Object.entries(sequence.privileges)
+    .map(([role, privileges]) =>
+      generateSequenceGrantsDefinition(fullName, role, privileges),
+    )
+    .flat();
+  const sql = [
+    `CREATE SEQUENCE IF NOT EXISTS ${fullName} 
   \tINCREMENT BY ${sequence.increment} 
   \tMINVALUE ${sequence.minValue}
   \tMAXVALUE ${sequence.maxValue}
   \tSTART WITH ${sequence.startValue}
   \tCACHE ${sequence.cacheSize}
-  \t${sequence.isCycle ? '' : 'NO '}CYCLE;
-  \n${privileges.flat().join('\n')}`;
+  \t${sequence.isCycle ? '' : 'NO '}CYCLE;\n`,
+    `ALTER SEQUENCE ${fullName} OWNER TO ${owner};\n`,
+  ];
+  joinStmt(sql, privileges, '\n');
+  return statement({
+    sql,
+  });
 }
 
 export function generateRenameSequenceScript(
   old_name: string,
   new_name: string,
 ) {
-  return stmt`ALTER SEQUENCE IF EXISTS ${old_name} RENAME TO ${new_name};`;
+  return statement({
+    sql: `ALTER SEQUENCE IF EXISTS ${old_name} RENAME TO ${new_name};`,
+  });
 }

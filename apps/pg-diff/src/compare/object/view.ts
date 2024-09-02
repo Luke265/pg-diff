@@ -7,7 +7,7 @@ import {
   generateDropViewScript,
   generateCreateViewScript,
 } from '../sql/view.js';
-import { Sql } from '../stmt.js';
+import { SqlResult } from '../utils.js';
 import { compareTablePrivileges } from './table.js';
 
 export function compareViews(
@@ -15,8 +15,8 @@ export function compareViews(
   targetViews: Record<string, ViewDefinition>,
   droppedViews: string[],
   config: Config,
-) {
-  const lines: Sql[] = [];
+): SqlResult[] {
+  const lines: SqlResult[] = [];
 
   for (const view in sourceViews) {
     const sourceObj = sourceViews[view];
@@ -28,8 +28,8 @@ export function compareViews(
       let targetViewDefinition = targetObj.definition.replace(/\r/g, '');
       if (sourceViewDefinition != targetViewDefinition) {
         if (!droppedViews.includes(view))
-          lines.push(generateDropViewScript(view));
-        lines.push(generateCreateViewScript(view, sourceObj));
+          lines.push(generateDropViewScript(sourceObj));
+        lines.push(generateCreateViewScript(sourceObj));
         lines.push(
           generateChangeCommentScript(
             sourceObj.id,
@@ -41,7 +41,7 @@ export function compareViews(
       } else {
         if (droppedViews.includes(view))
           //It will recreate a dropped view because changes happens on involved columns
-          lines.push(generateCreateViewScript(view, sourceObj));
+          lines.push(generateCreateViewScript(sourceObj));
 
         lines.push(
           ...compareTablePrivileges(
@@ -67,7 +67,7 @@ export function compareViews(
       }
     } else {
       //View not exists on target database, then generate the script to create view
-      lines.push(generateCreateViewScript(view, sourceObj));
+      lines.push(generateCreateViewScript(sourceObj));
       lines.push(
         generateChangeCommentScript(
           sourceObj.id,
@@ -80,12 +80,12 @@ export function compareViews(
   }
 
   if (config.compareOptions.schemaCompare.dropMissingView)
-    for (let view in targetViews) {
+    for (const view in targetViews) {
       if (sourceViews[view]) {
         continue;
       }
 
-      lines.push(generateDropViewScript(view));
+      lines.push(generateDropViewScript(targetViews[view]));
     }
 
   return lines;

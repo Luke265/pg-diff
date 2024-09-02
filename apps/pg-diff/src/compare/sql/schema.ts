@@ -1,5 +1,7 @@
-import { stmt } from '../stmt.js';
+import { statement } from '../stmt.js';
 
 export function generateCreateSchemaScript(schema: string, owner: string) {
-  return stmt`CREATE SCHEMA IF NOT EXISTS ${schema} AUTHORIZATION ${owner};`;
+  return statement({
+    sql: `CREATE SCHEMA IF NOT EXISTS ${schema} AUTHORIZATION ${owner};`,
+  });
 }

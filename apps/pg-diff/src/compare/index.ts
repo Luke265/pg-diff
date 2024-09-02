@@ -19,6 +19,7 @@ import { compareProcedures } from './object/procedure.js';
 import { compareAggregates } from './object/aggregate.js';
 import { compareSchemas } from './object/schema.js';
 import { compareTriggers } from './object/trigger.js';
+import { SqlResult } from './utils.js';
 
 export async function compare(config: Config, eventEmitter: EventEmitter) {
   eventEmitter.emit('compare', 'Compare started', 0);
@@ -109,16 +110,16 @@ export function compareDatabaseObjects(
   const droppedViews: string[] = [];
   const addedColumns: Record<string, string[]> = {};
   const addedTables: string[] = [];
-  const sqlPatch: (Sql | null)[] = [];
+  const sqlPatch: SqlResult[] = [];
 
   sqlPatch.push(
-    ...compareSchemas(dbSourceObjects.schemas, dbTargetObjects.schemas),
+    compareSchemas(dbSourceObjects.schemas, dbTargetObjects.schemas),
   );
   eventEmitter.emit('compare', 'SCHEMA objects have been compared', 45);
 
   if (config.compareOptions.schemaCompare.sequence !== false) {
     sqlPatch.push(
-      ...compareSequences(
+      compareSequences(
         config,
         dbSourceObjects.sequences,
         dbTargetObjects.sequences,
@@ -128,7 +129,7 @@ export function compareDatabaseObjects(
   }
 
   sqlPatch.push(
-    ...compareTables(
+    compareTables(
       dbSourceObjects,
       dbTargetObjects,
       droppedConstraints,
@@ -141,16 +142,16 @@ export function compareDatabaseObjects(
   );
 
   sqlPatch.push(
-    ...compareTypes(dbSourceObjects.types, dbTargetObjects.types, config),
+    compareTypes(dbSourceObjects.types, dbTargetObjects.types, config),
   );
 
   sqlPatch.push(
-    ...compareDomains(dbSourceObjects.domains, dbTargetObjects.domains, config),
+    compareDomains(dbSourceObjects.domains, dbTargetObjects.domains, config),
   );
   eventEmitter.emit('compare', 'TABLE objects have been compared', 55);
 
   sqlPatch.push(
-    ...compareViews(
+    compareViews(
       dbSourceObjects.views,
       dbTargetObjects.views,
       droppedViews,
@@ -160,7 +161,7 @@ export function compareDatabaseObjects(
   eventEmitter.emit('compare', 'VIEW objects have been compared', 60);
 
   sqlPatch.push(
-    ...compareMaterializedViews(
+    compareMaterializedViews(
       dbSourceObjects.materializedViews,
       dbTargetObjects.materializedViews,
       droppedViews,
@@ -175,7 +176,7 @@ export function compareDatabaseObjects(
   );
 
   sqlPatch.push(
-    ...compareProcedures(
+    compareProcedures(
       dbSourceObjects.functionMap,
       dbTargetObjects.functionMap,
       config,
@@ -184,7 +185,7 @@ export function compareDatabaseObjects(
   eventEmitter.emit('compare', 'PROCEDURE objects have been compared', 70);
 
   sqlPatch.push(
-    ...compareAggregates(
+    compareAggregates(
       dbSourceObjects.aggregates,
       dbTargetObjects.aggregates,
       config,
@@ -193,11 +194,11 @@ export function compareDatabaseObjects(
   eventEmitter.emit('compare', 'AGGREGATE objects have been compared', 75);
 
   sqlPatch.push(
-    ...comparePolicies(config, dbSourceObjects.tables, dbTargetObjects.tables),
+    comparePolicies(config, dbSourceObjects.tables, dbTargetObjects.tables),
   );
 
   sqlPatch.push(
-    ...compareTriggers(config, dbSourceObjects.tables, dbTargetObjects.tables),
+    compareTriggers(config, dbSourceObjects.tables, dbTargetObjects.tables),
   );
 
   return {
@@ -210,6 +211,6 @@ export function compareDatabaseObjects(
       columns: addedColumns,
       tables: addedTables,
     },
-    ddl: sqlPatch.filter((v): v is Sql => !!v),
+    ddl: sqlPatch.flat(5).filter((v): v is Sql => !!v),
   };
 }

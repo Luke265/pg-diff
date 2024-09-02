@@ -1,5 +1,3 @@
-import { SqlRef } from '../compare/stmt.js';
-
 export interface FunctionDefinition {
   id: number;
   argTypes: string;
@@ -55,6 +53,7 @@ export interface ViewDependency {
 }
 export interface ViewDefinition {
   id: number;
+  fullName: string;
   definition: string;
   owner: string;
   privileges: Record<string, Privileges>;

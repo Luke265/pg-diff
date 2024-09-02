@@ -1,3 +1,7 @@
+import { Sql } from './stmt.js';
+
+export type SqlResult = Sql | null | SqlResult[];
+
 export function commentIsEqual(
   a: string | null | undefined,
   b: string | null | undefined,
@@ -65,4 +69,14 @@ export function buildGrants(
     result.push(['REVOKE', revokes.join(', ')]);
   }
   return result;
+}
+
+export function replaceLastCharacter(
+  input: string,
+  replacement: string,
+): string {
+  if (input.length === 0) {
+    return input;
+  }
+  return input.slice(0, -1) + replacement;
 }

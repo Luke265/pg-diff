@@ -1,30 +1,42 @@
-import { join, stmt } from '../stmt.js';
+import { statement } from '../stmt.js';
 import { MaterializedViewDefinition } from '../../catalog/database-objects.js';
 import { generateTableGrantsDefinition } from './table.js';
+import { SqlResult } from '../utils.js';
 
 export function generateCreateMaterializedViewScript(
-  view: string,
   schema: MaterializedViewDefinition,
-) {
+): SqlResult[] {
   //Generate indexes script
-  const indexes: string[] = [];
-  for (const index in schema.indexes) {
-    indexes.push(`\n${schema.indexes[index].definition};\n`);
-  }
+  const indexes = Object.values(schema.indexes).map((index) =>
+    statement({ sql: index.definition }),
+  );
 
   //Generate privileges script
   const privileges = Object.entries(schema.privileges)
-    .map(([role, obj]) => generateTableGrantsDefinition(view, role, obj))
+    .map(([role, obj]) =>
+      generateTableGrantsDefinition(schema.fullName, role, obj),
+    )
     .flat()
     .filter((v) => !!v);
-
-  return stmt`CREATE MATERIALIZED VIEW IF NOT EXISTS ${view} AS ${
-    schema.definition
-  }\n${indexes.join('\n')}
-  ALTER MATERIALIZED VIEW IF EXISTS ${view} OWNER TO ${schema.owner};
-  ${join(privileges, '\n')}`;
+  return [
+    statement({
+      sql: `CREATE MATERIALIZED VIEW IF NOT EXISTS ${schema.fullName} AS ${schema.definition};`,
+      declarations: [schema.id],
+    }),
+    ...indexes,
+    statement({
+      sql: `ALTER MATERIALIZED VIEW IF EXISTS ${schema.fullName} OWNER TO ${schema.owner};`,
+      dependencies: [schema.id],
+    }),
+    ...privileges,
+  ];
 }
 
-export function generateDropMaterializedViewScript(view: string) {
-  return stmt`DROP MATERIALIZED VIEW IF EXISTS ${view};`;
+export function generateDropMaterializedViewScript(
+  schema: MaterializedViewDefinition,
+) {
+  return statement({
+    sql: `DROP MATERIALIZED VIEW IF EXISTS ${schema.fullName};`,
+    before: [schema.id],
+  });
 }

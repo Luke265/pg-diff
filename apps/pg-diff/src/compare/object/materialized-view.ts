@@ -7,7 +7,7 @@ import {
 } from '../sql/materialized-view.js';
 import { generateChangeCommentScript } from '../sql/misc.js';
 import { generateChangeTableOwnerScript } from '../sql/table.js';
-import { Sql } from '../stmt.js';
+import { SqlResult } from '../utils.js';
 import { compareTableIndexes, compareTablePrivileges } from './table.js';
 
 export function compareMaterializedViews(
@@ -16,8 +16,8 @@ export function compareMaterializedViews(
   droppedViews: string[],
   droppedIndexes: string[],
   config: Config,
-) {
-  const lines: Sql[] = [];
+): SqlResult[] {
+  const lines: SqlResult[] = [];
   for (const view in sourceMaterializedViews) {
     const sourceObj = sourceMaterializedViews[view];
     const targetObj = targetMaterializedViews[view];
@@ -28,9 +28,9 @@ export function compareMaterializedViews(
       const targetViewDefinition = targetObj.definition.replace(/\r/g, '');
       if (sourceViewDefinition != targetViewDefinition) {
         if (!droppedViews.includes(view)) {
-          lines.push(generateDropMaterializedViewScript(view));
+          lines.push(generateDropMaterializedViewScript(sourceObj));
         }
-        lines.push(generateCreateMaterializedViewScript(view, sourceObj));
+        lines.push(generateCreateMaterializedViewScript(sourceObj));
         lines.push(
           generateChangeCommentScript(
             sourceObj.id,
@@ -42,7 +42,7 @@ export function compareMaterializedViews(
       } else {
         if (droppedViews.includes(view)) {
           //It will recreate a dropped materialized view because changes happens on involved columns
-          lines.push(generateCreateMaterializedViewScript(view, sourceObj));
+          lines.push(generateCreateMaterializedViewScript(sourceObj));
         }
         lines.push(
           ...compareTableIndexes(
@@ -76,7 +76,7 @@ export function compareMaterializedViews(
       }
     } else {
       //Materialized view not exists on target database, then generate the script to create materialized view
-      lines.push(generateCreateMaterializedViewScript(view, sourceObj));
+      lines.push(generateCreateMaterializedViewScript(sourceObj));
       lines.push(
         generateChangeCommentScript(
           sourceObj.id,
@@ -93,7 +93,9 @@ export function compareMaterializedViews(
       if (sourceMaterializedViews[view]) {
         continue;
       }
-      lines.push(generateDropMaterializedViewScript(view));
+      lines.push(
+        generateDropMaterializedViewScript(targetMaterializedViews[view]),
+      );
     }
   }
 

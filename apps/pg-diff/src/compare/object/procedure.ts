@@ -12,16 +12,16 @@ import {
   generateChangesProcedureRoleGrantsScript,
   generateProcedureRoleGrantsScript,
 } from '../sql/procedure.js';
-import { Sql } from '../stmt.js';
+import { SqlResult } from '../utils.js';
 
 export function compareProcedures(
   sourceFunctions: Record<string, Record<string, FunctionDefinition>>,
   targetFunctions: Record<string, Record<string, FunctionDefinition>>,
   config: Config,
-) {
-  const lines: (Sql | null)[] = [];
+): SqlResult[] {
+  const lines: SqlResult[] = [];
 
-  for (let procedure in sourceFunctions) {
+  for (const procedure in sourceFunctions) {
     for (const procedureArgs in sourceFunctions[procedure]) {
       const sourceObj = sourceFunctions[procedure][procedureArgs];
       const targetObj =
@@ -59,7 +59,7 @@ export function compareProcedures(
           }
         } else {
           lines.push(
-            ...compareProcedurePrivileges(
+            compareProcedurePrivileges(
               sourceObj,
               sourceObj.privileges,
               targetObj.privileges,
@@ -67,14 +67,7 @@ export function compareProcedures(
           );
 
           if (sourceObj.owner != targetObj.owner)
-            lines.push(
-              generateChangeProcedureOwnerScript(
-                procedure,
-                procedureArgs,
-                sourceObj.owner,
-                sourceObj.type,
-              ),
-            );
+            lines.push(generateChangeProcedureOwnerScript(sourceObj));
 
           if (sourceObj.comment != sourceObj.comment)
             lines.push(
@@ -127,8 +120,8 @@ export function compareProcedurePrivileges(
   schema: FunctionDefinition,
   sourceProcedurePrivileges: Record<string, FunctionPrivileges>,
   targetProcedurePrivileges: Record<string, FunctionPrivileges>,
-) {
-  const lines: (Sql | null)[] = [];
+): SqlResult[] {
+  const lines: SqlResult[] = [];
 
   for (const role in sourceProcedurePrivileges) {
     const sourceObj = sourceProcedurePrivileges[role];
