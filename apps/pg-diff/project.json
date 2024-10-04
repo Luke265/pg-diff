@@ -14,6 +14,8 @@
         "outputPath": "dist/apps/pg-diff",
         "format": ["esm"],
         "bundle": false,
+        "declaration": true,
+        "declarationRootDir": "apps/pg-diff/src",
         "main": "apps/pg-diff/src/index.ts",
         "tsConfig": "apps/pg-diff/tsconfig.app.json",
         "generatePackageJson": true,
