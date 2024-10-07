@@ -9,14 +9,21 @@ execSync(`cd ${dir} & npm pack`, {
   stdio: 'inherit',
 });
 
-const pkg = JSON.parse(fs.readFileSync(dir + '/package.json').toString());
-const name = `${pkg.name}-${pkg.version}.tgz`;
+const pkg = JSON.parse(fs.readFileSync(dir + '/package.json').toString()) as {
+  name: string;
+  version: string;
+};
+const formattedPkgName = pkg.name.replaceAll(/[@/]/g, (str) =>
+  str === '@' ? '' : '-',
+);
+const name = `${formattedPkgName}-${pkg.version}.tgz`;
 
 uploadFile(dir + '/' + name)
   .then((res) => res.text())
   .then(console.info);
 
 async function uploadFile(filePath: string) {
+  console.log('Uploading', filePath);
   const file = await openAsBlob(filePath);
   const formData = new FormData();
   formData.set('package', file, path.basename(filePath));
