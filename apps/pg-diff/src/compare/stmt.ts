@@ -1,17 +1,35 @@
 export type RawValue = string | Sql | null;
 export type Id = number | string;
 
+let ID = 0;
 export class Sql {
+  public readonly id = 'sql_' + ID++;
   constructor(
     public readonly dependencies: Id[],
     public readonly before: Id[],
     public readonly declarations: Id[],
     public readonly content: string,
-    public readonly weight: number,
+    public weight: number,
   ) {}
 
   toString() {
     return this.content;
+  }
+
+  setWeight(weight: number) {
+    this.weight = weight;
+    return this;
+  }
+
+  addBefore(id: Id | Sql | Sql[]) {
+    if (id instanceof Sql) {
+      this.before.push(id.id);
+    } else if (Array.isArray(id)) {
+      this.before.push(...id.map((sql) => sql.id));
+    } else {
+      this.before.push(id);
+    }
+    return this;
   }
 }
 

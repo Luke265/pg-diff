@@ -25,16 +25,12 @@ export function generateProcedureGrantsDefinition(
 
 export function generateCreateProcedureScript(
   schema: FunctionDefinition,
-): SqlResult[] {
+): Sql[] {
   return [
     statement({
       sql: replaceLastCharacter(schema.definition, ';'),
       dependencies: schema.fReferenceIds,
       declarations: [schema.id],
-    }),
-    statement({
-      sql: `ALTER ${PROCEDURE_TYPE[schema.type]} ${schema.fullName}(${schema.argTypes}) OWNER TO ${schema.owner};`,
-      dependencies: [schema.id],
     }),
     ...Object.keys(schema.privileges)
       .map((role) => generateProcedureGrantsDefinition(schema, role))
@@ -42,13 +38,10 @@ export function generateCreateProcedureScript(
   ];
 }
 
-export function generateDropProcedureScript(
-  schema: FunctionDefinition,
-): SqlResult {
+export function generateDropProcedureScript(schema: FunctionDefinition): Sql {
   return statement({
     sql: `DROP ${PROCEDURE_TYPE[schema.type]} IF EXISTS ${schema.fullName}(${schema.argTypes});`,
     before: schema.fReferenceIds,
-    weight: 1,
   });
 }
 

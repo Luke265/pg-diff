@@ -1,6 +1,7 @@
 export interface FunctionDefinition {
   id: number;
   argTypes: string;
+  returnType: string;
   fullName: string;
   returnTypeId: number;
   argtypeids: number[];
@@ -172,6 +173,7 @@ export interface AggregateDefinition {
   definition: string;
   fullName: string;
   returnTypeId: number;
+  returnType: string;
   argtypeids: number[];
   languageName: string;
   type: 'f';

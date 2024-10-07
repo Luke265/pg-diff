@@ -10,6 +10,7 @@ export function sortByDependencies(items: Sql[]): Sql[] {
   // Create a map of declarations to items
   const declarationMap = new Map<number | string, Sql>();
   items.forEach((item) => {
+    declarationMap.set(item.id, item);
     item.declarations.forEach((declaration) => {
       declarationMap.set(declaration, item);
     });
@@ -26,7 +27,7 @@ export function sortByDependencies(items: Sql[]): Sql[] {
   // Populate in-degree map and adjacency list
   items.forEach((item) => {
     item.before.forEach((dep) => {
-      if (item.declarations.includes(dep)) {
+      if (item.declarations.includes(dep) || item.id === dep) {
         return;
       }
       const depItem = declarationMap.get(dep);

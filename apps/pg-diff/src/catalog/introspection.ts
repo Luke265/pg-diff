@@ -377,6 +377,7 @@ export function getViewDependencies(
 export interface FunctionRow {
   id: number;
   returnTypeId: number;
+  returnType: string;
   /**
    * Array types are unwrapped to element type
    */
@@ -404,14 +405,16 @@ export function getFunctions(
   pg_get_functiondef(p.oid) as definition,
   p.proowner::regrole::name as owner, 
   oidvectortypes(proargtypes) as argtypes,
+  (CASE tn.nspname WHEN 'pg_catalog' THEN t.typname ELSE FORMAT('"%s"."%s"', tn.nspname, t.typname) END) AS "returnType",
   ARRAY((SELECT (CASE typelem WHEN 0 THEN oid ELSE typelem END) FROM pg_type WHERE oid = ANY(proargtypes)))::INTEGER[] AS argtypeids,
   d.description AS comment,
   p.prokind
                   FROM pg_proc p
                   INNER JOIN pg_namespace n ON n.oid = p.pronamespace
                   INNER JOIN pg_language l ON l.oid = p.prolang
-                  LEFT JOIN pg_type t ON t.oid = p.prorettype
                   LEFT JOIN pg_description d ON d.objoid = p."oid" AND d.objsubid = 0
+                  LEFT JOIN pg_type t ON t.oid = p.prorettype
+                  JOIN pg_namespace tn ON tn.oid = t.typnamespace
                   WHERE n.nspname IN ('${schemas.join(
                     "','",
                   )}') AND p.probin IS NULL 
@@ -434,6 +437,7 @@ export interface AggregateRow {
   argtypes: string;
   languageName: string;
   returnTypeId: number;
+  returnType: string;
   argtypeids: number[];
   definition: string;
   comment: string | null;
@@ -451,6 +455,7 @@ export function getAggregates(
   p.proname, n.nspname, 
   p.proowner::regrole::name as owner, 
   oidvectortypes(p.proargtypes) as argtypes,
+  (CASE tn.nspname WHEN 'pg_catalog' THEN t.typname ELSE FORMAT('"%s"."%s"', tn.nspname, t.typname) END) AS "returnType",
   ARRAY((SELECT (CASE typelem WHEN 0 THEN oid ELSE typelem END) FROM pg_type WHERE oid = ANY(proargtypes)))::INTEGER[] AS argtypeids,
                   format('%s', array_to_string(
                       ARRAY[
@@ -508,6 +513,7 @@ export function getAggregates(
                   FROM pg_proc p
                   INNER JOIN pg_language l ON l.oid = p.prolang
                   LEFT JOIN pg_type t ON t.oid = p.prorettype
+                  JOIN pg_namespace tn ON tn.oid = t.typnamespace
                   INNER JOIN pg_namespace n ON n.oid = p.pronamespace
                   INNER JOIN pg_aggregate a on p.oid = a.aggfnoid 
                   LEFT JOIN pg_operator o ON o.oid = a.aggsortop

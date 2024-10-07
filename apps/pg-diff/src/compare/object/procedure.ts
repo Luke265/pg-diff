@@ -43,10 +43,16 @@ export function compareProcedures(
           '',
         );
         if (sourceFunctionDefinition !== targetFunctionDefinition) {
-          if (sourceObj.argTypes !== targetObj.argTypes) {
-            lines.push(generateDropProcedureScript(sourceObj));
+          const generated = generateCreateProcedureScript(sourceObj);
+          if (
+            sourceObj.argTypes !== targetObj.argTypes ||
+            sourceObj.returnType !== targetObj.returnType
+          ) {
+            lines.push(
+              generateDropProcedureScript(sourceObj).addBefore(generated),
+            );
           }
-          lines.push(generateCreateProcedureScript(sourceObj));
+          lines.push(generated);
           if (sourceObj.comment) {
             lines.push(
               generateChangeCommentScript(
@@ -108,7 +114,7 @@ export function compareProcedures(
         lines.push(
           generateDropProcedureScript(
             targetFunctions[procedure][procedureArgs],
-          ),
+          ).setWeight(1),
         );
       }
     }
