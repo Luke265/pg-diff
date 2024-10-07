@@ -52,8 +52,11 @@ export function compareViews(
           ),
         );
 
-        if (sourceObj.owner != targetObj.owner)
+        if (
+          config.compareOptions.mapRole(sourceObj.owner) !== targetObj.owner
+        ) {
           lines.push(generateChangeTableOwnerScript(view, sourceObj.owner));
+        }
 
         if (sourceObj.comment != targetObj.comment)
           lines.push(

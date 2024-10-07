@@ -53,6 +53,10 @@ export function compareProcedures(
             );
           }
           lines.push(generated);
+          const owner = config.compareOptions.mapRole(sourceObj.owner);
+          if (owner !== targetObj.owner) {
+            lines.push(generateChangeProcedureOwnerScript(sourceObj, owner));
+          }
           if (sourceObj.comment) {
             lines.push(
               generateChangeCommentScript(
@@ -69,11 +73,14 @@ export function compareProcedures(
               sourceObj,
               sourceObj.privileges,
               targetObj.privileges,
+              config,
             ),
           );
 
-          if (sourceObj.owner != targetObj.owner)
-            lines.push(generateChangeProcedureOwnerScript(sourceObj));
+          const owner = config.compareOptions.mapRole(sourceObj.owner);
+          if (owner !== targetObj.owner) {
+            lines.push(generateChangeProcedureOwnerScript(sourceObj, owner));
+          }
 
           if (sourceObj.comment != sourceObj.comment)
             lines.push(
@@ -88,6 +95,12 @@ export function compareProcedures(
       } else {
         //Procedure not exists on target database, then generate the script to create procedure
         lines.push(generateCreateProcedureScript(sourceObj));
+        lines.push(
+          generateChangeProcedureOwnerScript(
+            sourceObj,
+            config.compareOptions.mapRole(sourceObj.owner),
+          ),
+        );
         if (sourceObj.comment) {
           lines.push(
             generateChangeCommentScript(
@@ -126,11 +139,13 @@ export function compareProcedurePrivileges(
   schema: FunctionDefinition,
   sourceProcedurePrivileges: Record<string, FunctionPrivileges>,
   targetProcedurePrivileges: Record<string, FunctionPrivileges>,
+  config: Config,
 ): SqlResult[] {
   const lines: SqlResult[] = [];
 
-  for (const role in sourceProcedurePrivileges) {
-    const sourceObj = sourceProcedurePrivileges[role];
+  for (const _role in sourceProcedurePrivileges) {
+    const role = config.compareOptions.mapRole(_role);
+    const sourceObj = sourceProcedurePrivileges[_role];
     const targetObj = targetProcedurePrivileges[role];
     //Get new or changed role privileges
     if (targetObj) {

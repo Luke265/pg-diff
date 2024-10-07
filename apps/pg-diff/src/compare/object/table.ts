@@ -102,8 +102,9 @@ export function compareTables(
       );
 
       const owner = config.compareOptions.mapRole(sourceObj.owner);
-      if (owner != targetObj.owner)
+      if (owner !== targetObj.owner) {
         lines.push(generateChangeTableOwnerScript(sourceTable, owner));
+      }
       if (!commentIsEqual(sourceObj.comment, targetObj?.comment)) {
         lines.push(
           generateChangeCommentScript(

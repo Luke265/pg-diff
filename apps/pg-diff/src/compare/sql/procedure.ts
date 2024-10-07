@@ -72,9 +72,10 @@ export function generateChangesProcedureRoleGrantsScript(
 
 export function generateChangeProcedureOwnerScript(
   schema: FunctionDefinition,
+  owner: string,
 ): SqlResult {
   return statement({
-    sql: `ALTER ${PROCEDURE_TYPE[schema.type]} ${schema.fullName}(${schema.argTypes}) OWNER TO ${schema.owner};`,
+    sql: `ALTER ${PROCEDURE_TYPE[schema.type]} ${schema.fullName}(${schema.argTypes}) OWNER TO ${owner};`,
     dependencies: [schema.id],
   });
 }
