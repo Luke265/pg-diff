@@ -52,9 +52,7 @@ export interface ViewDependency {
   tableName: string;
   columnName: string;
 }
-export interface ViewDefinition {
-  id: number;
-  fullName: string;
+export interface ViewDefinition extends DbObject {
   definition: string;
   owner: string;
   privileges: Record<string, Privileges>;
@@ -149,19 +147,25 @@ export interface Trigger {
   schema: string;
   comment: string;
 }
-
-export interface TableObject {
+export interface DbObject {
   id: number;
   schema: string;
   name: string;
   fullName: string;
+  kind: 'r' | 'v' | 'm';
+}
+
+export interface HasPrivileges {
+  privileges: Record<string, Privileges>;
+}
+
+export interface TableObject extends DbObject, HasPrivileges {
   columns: Record<string, Column>;
   constraints: Record<string, ConstraintDefinition>;
   options: TableOptions;
   indexes: Record<string, IndexDefinition>;
   policies: Record<string, Policy>;
   triggers: Record<string, Trigger>;
-  privileges: Record<string, Privileges>;
   owner: string;
   comment: string | null;
 }

@@ -1,0 +1,3 @@
+REVOKE INSERT ON TABLE "public"."post" FROM dev_pg_diff_part;--WARN: Grant\Revoke privileges to a role can occure in a sql error during execution if role is missing to the target database!
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "public"."post" TO dev_pg_diff;--WARN: Grant\Revoke privileges to a role can occure in a sql error during execution if role is missing to the target database!
+REVOKE ALL ON "public"."post" FROM dev_pg_diff_old;--WARN: Grant\Revoke privileges to a role can occure in a sql error during execution if role is missing to the target database!

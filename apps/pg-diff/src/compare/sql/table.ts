@@ -3,6 +3,7 @@ import objectType from '../../enums/object-type.js';
 import { Sql, joinStmt, statement } from '../stmt.js';
 import {
   ConstraintDefinition,
+  DbObject,
   Privileges,
   TableObject,
   TableOptions,
@@ -11,7 +12,7 @@ import { generateColumnDefinition } from './column.js';
 import { generateChangeCommentScript, hints } from './misc.js';
 
 export function generateTableGrantsDefinition(
-  table: string,
+  object: DbObject,
   role: string,
   privileges: Privileges,
 ): Sql[] {
@@ -25,14 +26,18 @@ export function generateTableGrantsDefinition(
     ['TRIGGER', privileges.trigger],
   ]).map(([type, privileges]) =>
     statement({
-      sql: `${type} ${privileges} ON TABLE ${table} ${
+      sql: `${type} ${privileges} ON TABLE ${object.fullName} ${
         type === 'GRANT' ? 'TO' : 'FROM'
       } ${role};${hints.potentialRoleMissing}`,
+      dependencies: [object.id],
     }),
   );
 }
 
-export function generateCreateTableScript(table: string, schema: TableObject) {
+export function generateCreateTableScript(
+  table: TableObject,
+  schema: TableObject,
+) {
   //Generate columns script
   const columnArr = Object.values(schema.columns);
   const columns: (string | Sql)[] = columnArr.map((obj) =>
@@ -90,7 +95,7 @@ export function generateCreateTableScript(table: string, schema: TableObject) {
         objectType.CONSTRAINT,
         obj.name,
         obj.comment,
-        table,
+        table.fullName,
       ),
     );
 
@@ -104,7 +109,9 @@ export function generateCreateTableScript(table: string, schema: TableObject) {
         obj.comment,
       ),
     );
-  const sql: (string | Sql)[] = [`CREATE TABLE IF NOT EXISTS ${table} (`];
+  const sql: (string | Sql)[] = [
+    `CREATE TABLE IF NOT EXISTS ${table.fullName} (`,
+  ];
   sql.push('\n    ');
   joinStmt(sql, columns, ',\n    ');
   sql.push('\n)');
@@ -131,7 +138,7 @@ export function generateCreateTableScript(table: string, schema: TableObject) {
     joinStmt(sql, indexesComment, '\n');
     sql.push('\n');
   }
-  sql.push(`ALTER TABLE IF EXISTS ${table} OWNER TO ${schema.owner};`);
+  sql.push(`ALTER TABLE IF EXISTS ${table.fullName} OWNER TO ${schema.owner};`);
   sql.push('\n');
   return statement({
     sql,
@@ -140,15 +147,15 @@ export function generateCreateTableScript(table: string, schema: TableObject) {
 }
 
 export function generateTableRoleGrantsScript(
-  table: string,
+  object: DbObject,
   role: string,
   privileges: Privileges,
 ) {
-  return generateTableGrantsDefinition(table, role, privileges);
+  return generateTableGrantsDefinition(object, role, privileges);
 }
 
 export function generateChangesTableRoleGrantsScript(
-  table: string,
+  object: DbObject,
   role: string,
   changes: PrivilegeChanges,
 ) {
@@ -162,11 +169,19 @@ export function generateChangesTableRoleGrantsScript(
     ['TRIGGER', changes.trigger],
   ]).map(([type, privileges]) =>
     statement({
-      sql: `${type} ${privileges} ON TABLE ${table} ${
+      sql: `${type} ${privileges} ON TABLE ${object.fullName} ${
         type === 'GRANT' ? 'TO' : 'FROM'
       } ${role};${hints.potentialRoleMissing}`,
+      dependencies: [object.id],
     }),
   );
+}
+
+export function generateRevokeAll(table: DbObject, role: string) {
+  return statement({
+    sql: `REVOKE ALL ON ${table.fullName} FROM ${role};${hints.potentialRoleMissing}`,
+    dependencies: [table.id],
+  });
 }
 
 export function generateChangeTableOwnerScript(table: string, owner: string) {

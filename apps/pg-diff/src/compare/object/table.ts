@@ -10,6 +10,7 @@ import {
   Column,
   Privileges,
   Trigger,
+  DbObject,
 } from '../../catalog/database-objects.js';
 import { Sql, statement } from '../stmt.js';
 import { commentIsEqual, ColumnChanges } from '../utils.js';
@@ -31,6 +32,7 @@ import {
   generateAddTableConstraintScript,
   generateChangesTableRoleGrantsScript,
   generateTableRoleGrantsScript,
+  generateRevokeAll,
 } from '../sql/table.js';
 import { generateDropViewScript } from '../sql/view.js';
 import { Config } from '../../config.js';
@@ -94,7 +96,7 @@ export function compareTables(
 
       lines.push(
         ...compareTablePrivileges(
-          sourceTable,
+          sourceObj,
           sourceObj.privileges,
           targetObj.privileges,
           config,
@@ -118,7 +120,7 @@ export function compareTables(
     } else {
       //Table not exists on target database, then generate the script to create table
       addedTables.push(sourceTable);
-      lines.push(generateCreateTableScript(sourceTable, sourceObj));
+      lines.push(generateCreateTableScript(sourceObj, sourceObj));
       if (sourceObj.comment) {
         lines.push(
           generateChangeCommentScript(
@@ -621,7 +623,7 @@ export function compareTableTriggers(
 }
 
 export function compareTablePrivileges(
-  tableName: string,
+  table: DbObject,
   sourceTablePrivileges: Record<string, Privileges>,
   targetTablePrivileges: Record<string, Privileges>,
   config: Config,
@@ -629,6 +631,8 @@ export function compareTablePrivileges(
   const lines: Sql[] = [];
 
   for (const role in sourceTablePrivileges) {
+    const source = sourceTablePrivileges[role];
+    const target = targetTablePrivileges[role];
     // In case a list of specific roles hve been configured, the check will only contains those roles eventually.
     if (
       config.compareOptions.schemaCompare.roles.length > 0 &&
@@ -637,61 +641,45 @@ export function compareTablePrivileges(
       continue;
 
     //Get new or changed role privileges
-    if (targetTablePrivileges[role]) {
+    if (target) {
       //Table privileges for role exists on both database, then compare privileges
       let changes: ColumnChanges = {};
 
-      if (
-        sourceTablePrivileges[role].select != targetTablePrivileges[role].select
-      )
-        changes.select = sourceTablePrivileges[role].select;
+      if (source.select != target.select)
+        changes.select = source.select ?? false;
 
-      if (
-        sourceTablePrivileges[role].insert != targetTablePrivileges[role].insert
-      )
-        changes.insert = sourceTablePrivileges[role].insert;
+      if (source.insert != target.insert)
+        changes.insert = source.insert ?? false;
 
-      if (
-        sourceTablePrivileges[role].update != targetTablePrivileges[role].update
-      )
-        changes.update = sourceTablePrivileges[role].update;
+      if (source.update != target.update)
+        changes.update = source.update ?? false;
 
-      if (
-        sourceTablePrivileges[role].delete != targetTablePrivileges[role].delete
-      )
-        changes.delete = sourceTablePrivileges[role].delete;
+      if (source.delete != target.delete)
+        changes.delete = source.delete ?? false;
 
-      if (
-        sourceTablePrivileges[role].truncate !=
-        targetTablePrivileges[role].truncate
-      )
-        changes.truncate = sourceTablePrivileges[role].truncate;
+      if (source.truncate != target.truncate)
+        changes.truncate = source.truncate ?? false;
 
-      if (
-        sourceTablePrivileges[role].references !=
-        targetTablePrivileges[role].references
-      )
-        changes.references = sourceTablePrivileges[role].references;
+      if (source.references != target.references)
+        changes.references = source.references ?? false;
 
-      if (
-        sourceTablePrivileges[role].trigger !=
-        targetTablePrivileges[role].trigger
-      )
-        changes.trigger = sourceTablePrivileges[role].trigger;
+      if (source.trigger != target.trigger)
+        changes.trigger = source.trigger ?? false;
 
       if (Object.keys(changes).length > 0)
         lines.push(
-          ...generateChangesTableRoleGrantsScript(tableName, role, changes),
+          ...generateChangesTableRoleGrantsScript(table, role, changes),
         );
     } else {
       //Table grants for role not exists on target database, then generate script to add role privileges
-      lines.push(
-        ...generateTableRoleGrantsScript(
-          tableName,
-          role,
-          sourceTablePrivileges[role],
-        ),
-      );
+      lines.push(...generateTableRoleGrantsScript(table, role, source));
+    }
+  }
+
+  for (const role in targetTablePrivileges) {
+    if (!sourceTablePrivileges[role]) {
+      lines.push(generateRevokeAll(table, role));
+      continue;
     }
   }
 

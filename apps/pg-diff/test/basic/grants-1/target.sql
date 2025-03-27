@@ -1,0 +1,7 @@
+CREATE TABLE post (
+    id         INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    author_id  INTEGER
+); 
+
+GRANT SELECT, UPDATE, DELETE, INSERT ON post TO dev_pg_diff_old;
+GRANT SELECT, UPDATE, DELETE, INSERT ON post TO dev_pg_diff_part;

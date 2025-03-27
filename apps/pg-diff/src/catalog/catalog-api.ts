@@ -9,12 +9,9 @@ import {
   getTableConstraints,
   getTableOptions,
   getTableIndexes,
-  getTablePrivileges,
   getViews,
-  getViewPrivileges,
   getViewDependencies,
   getMaterializedViews,
-  getMaterializedViewPrivileges,
   getFunctions,
   getFunctionPrivileges,
   getAggregates,
@@ -24,6 +21,7 @@ import {
   getTypes,
   getDomains,
   getTableTriggers,
+  getPrivileges,
 } from './introspection.js';
 import {
   AggregateDefinition,
@@ -131,6 +129,7 @@ export async function retrieveTables(client: ClientBase, config: Config) {
       const fullName = `"${table.schemaname}"."${table.tablename}"`;
       const def: TableObject = (result[fullName] = {
         id: table.id,
+        kind: 'r',
         name: table.tablename,
         schema: table.schemaname,
         fullName,
@@ -225,27 +224,7 @@ export async function retrieveTables(client: ClientBase, config: Config) {
         };
       });
 
-      const privileges = await getTablePrivileges(
-        client,
-        table.schemaname,
-        table.tablename,
-      );
-      privileges.rows
-        .filter(
-          (row) =>
-            config.roles.length <= 0 || config.roles.includes(row.usename),
-        )
-        .forEach((privilege) => {
-          def.privileges[privilege.usename] = {
-            select: privilege.select,
-            insert: privilege.insert,
-            update: privilege.update,
-            delete: privilege.delete,
-            truncate: privilege.truncate,
-            references: privilege.references,
-            trigger: privilege.trigger,
-          };
-        });
+      await loadPrivileges(client, config, def);
 
       const policies = await getTablePolicies(
         client,
@@ -330,6 +309,9 @@ export async function retrieveViews(client: ClientBase, config: Config) {
       const fullViewName = `"${view.schemaname}"."${view.viewname}"`;
       const def: ViewDefinition = (result[fullViewName] = {
         id: view.id,
+        kind: 'v',
+        name: view.viewname,
+        schema: view.schemaname,
         fullName: fullViewName,
         definition: view.definition,
         owner: view.viewowner,
@@ -338,27 +320,7 @@ export async function retrieveViews(client: ClientBase, config: Config) {
         comment: view.comment,
       });
 
-      const privileges = await getViewPrivileges(
-        client,
-        view.schemaname,
-        view.viewname,
-      );
-      privileges.rows
-        .filter(
-          (row) =>
-            config.roles.length <= 0 || config.roles.includes(row.usename),
-        )
-        .forEach((privilege) => {
-          def.privileges[privilege.usename] = {
-            select: privilege.select,
-            insert: privilege.insert,
-            update: privilege.update,
-            delete: privilege.delete,
-            truncate: privilege.truncate,
-            references: privilege.references,
-            trigger: privilege.trigger,
-          };
-        });
+      await loadPrivileges(client, config, def);
 
       const dependencies = await getViewDependencies(
         client,
@@ -393,6 +355,9 @@ export async function retrieveMaterializedViews(
       const fullViewName = `"${view.schemaname}"."${view.matviewname}"`;
       const def: MaterializedViewDefinition = (result[fullViewName] = {
         id: view.id,
+        kind: 'm',
+        name: view.matviewname,
+        schema: view.schemaname,
         fullName: fullViewName,
         definition: view.definition,
         indexes: {},
@@ -417,27 +382,7 @@ export async function retrieveMaterializedViews(
         };
       });
 
-      let privileges = await getMaterializedViewPrivileges(
-        client,
-        view.schemaname,
-        view.matviewname,
-      );
-      privileges.rows
-        .filter(
-          (row) =>
-            config.roles.length <= 0 || config.roles.includes(row.usename),
-        )
-        .forEach((privilege) => {
-          def.privileges[privilege.usename] = {
-            select: privilege.select,
-            insert: privilege.insert,
-            update: privilege.update,
-            delete: privilege.delete,
-            truncate: privilege.truncate,
-            references: privilege.references,
-            trigger: privilege.trigger,
-          };
-        });
+      await loadPrivileges(client, config, def);
 
       const dependencies = await getViewDependencies(
         client,
@@ -672,4 +617,47 @@ export async function retrieveDomains(client: ClientBase, config: Config) {
     }),
   );
   return result;
+}
+
+async function loadPrivileges(
+  client: ClientBase,
+  config: Config,
+  table: ViewDefinition | TableObject | MaterializedViewDefinition,
+) {
+  const privileges = await getPrivileges(
+    client,
+    table.schema,
+    table.name,
+    table.kind,
+  );
+  privileges.rows
+    .filter(
+      (row) => config.roles.length <= 0 || config.roles.includes(row.grantee),
+    )
+    .forEach((privilege) => {
+      const d = (table.privileges[privilege.grantee] ??= {});
+      switch (privilege.privilegeType) {
+        case 'SELECT':
+          d.select = true;
+          break;
+        case 'UPDATE':
+          d.update = true;
+          break;
+        case 'INSERT':
+          d.insert = true;
+          break;
+        case 'DELETE':
+          d.delete = true;
+          break;
+        case 'TRUNCATE':
+          d.truncate = true;
+          break;
+        case 'REFERENCES':
+          d.references = true;
+          break;
+        case 'TRIGGER':
+          d.trigger = true;
+          break;
+      }
+    });
 }

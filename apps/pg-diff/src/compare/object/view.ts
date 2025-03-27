@@ -45,7 +45,7 @@ export function compareViews(
 
         lines.push(
           ...compareTablePrivileges(
-            view,
+            sourceObj,
             sourceObj.privileges,
             targetObj.privileges,
             config,

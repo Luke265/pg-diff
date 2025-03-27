@@ -7,4 +7,3 @@ BEGIN
     RETURN '1';
 END;
 $function$;
-ALTER FUNCTION "public"."tg_test"() OWNER TO dev;

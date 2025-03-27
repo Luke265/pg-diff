@@ -4,9 +4,7 @@ import { generateTableGrantsDefinition } from './table.js';
 
 export function generateCreateViewScript(schema: ViewDefinition) {
   const privileges = Object.entries(schema.privileges)
-    .map(([role, obj]) =>
-      generateTableGrantsDefinition(schema.fullName, role, obj),
-    )
+    .map(([role, obj]) => generateTableGrantsDefinition(schema, role, obj))
     .flat()
     .filter((v) => !!v);
   return [

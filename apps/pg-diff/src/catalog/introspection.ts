@@ -230,34 +230,38 @@ export function getTableIndexes(
                   LEFT JOIN pg_description d ON d.objoid = idx."oid" AND d.objsubid = 0
                   WHERE tbln.nspname = '${schemaName}' AND tbl.relname='${tableName}' AND i.indisprimary = false AND i.indisunique = FALSE`);
 }
-export interface PrivilegeRow {
-  schemaname: string;
-  tablename: string;
-  usename: string;
-  select: boolean;
-  insert: boolean;
-  update: boolean;
-  delete: boolean;
-  truncate: boolean;
-  references: boolean;
-  trigger: boolean;
+export interface RolePrivilegeRow {
+  grantee: string;
+  grantor: string;
+  privilegeType:
+    | 'SELECT'
+    | 'UPDATE'
+    | 'INSERT'
+    | 'DELETE'
+    | 'TRUNCATE'
+    | 'REFERENCES'
+    | 'TRIGGER';
 }
-export function getTablePrivileges(
+
+export function getPrivileges(
   client: ClientBase,
   schemaName: string,
-  tableName: string,
+  relname: string,
+  // r = ordinary table, i = index, S = sequence, t = TOAST table, v = view, m = materialized view, c = composite type, f = foreign table, p = partitioned table, I = partitioned index
+  kind: 'r' | 'v' | 'm',
 ) {
-  return client.query<PrivilegeRow>(`SELECT t.schemaname, t.tablename, u.usename, 
-                  HAS_TABLE_PRIVILEGE(u.usename,'"${schemaName}"."${tableName}"', 'SELECT') as select,
-                  HAS_TABLE_PRIVILEGE(u.usename,'"${schemaName}"."${tableName}"', 'INSERT') as insert,
-                  HAS_TABLE_PRIVILEGE(u.usename,'"${schemaName}"."${tableName}"', 'UPDATE') as update,
-                  HAS_TABLE_PRIVILEGE(u.usename,'"${schemaName}"."${tableName}"', 'DELETE') as delete, 
-                  HAS_TABLE_PRIVILEGE(u.usename,'"${schemaName}"."${tableName}"', 'TRUNCATE') as truncate,
-                  HAS_TABLE_PRIVILEGE(u.usename,'"${schemaName}"."${tableName}"', 'REFERENCES') as references,
-                  HAS_TABLE_PRIVILEGE(u.usename,'"${schemaName}"."${tableName}"', 'TRIGGER') as trigger
-                  FROM pg_tables t, pg_user u 
-                  WHERE t.schemaname = '${schemaName}' and t.tablename='${tableName}'`);
+  return client.query<RolePrivilegeRow>(`SELECT
+                      grantee.rolname AS grantee,
+                      grantor.rolname AS grantor,
+                      privilege_type AS "privilegeType"
+                  FROM pg_catalog.pg_class c
+                  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                  CROSS JOIN LATERAL pg_catalog.aclexplode(c.relacl) acl
+                  JOIN pg_catalog.pg_roles grantee ON acl.grantee = grantee.oid
+                  JOIN pg_catalog.pg_roles grantor ON acl.grantor = grantor.oid
+                  WHERE c.relkind = '${kind}' AND n.nspname = '${schemaName}' and c.relname='${relname}'`);
 }
+
 export interface ViewRow {
   id: number;
   schemaname: string;
@@ -279,34 +283,7 @@ export function getViews(client: ClientBase, schemas: string[]) {
                       WHERE d.deptype = 'e'
                   )`);
 }
-export interface ViewPrivilegeRow {
-  schemaname: string;
-  viewname: string;
-  usename: string;
-  select: boolean;
-  insert: boolean;
-  update: boolean;
-  delete: boolean;
-  truncate: boolean;
-  references: boolean;
-  trigger: boolean;
-}
-export function getViewPrivileges(
-  client: ClientBase,
-  schemaName: string,
-  viewName: string,
-) {
-  return client.query<ViewPrivilegeRow>(`SELECT v.schemaname, v.viewname, u.usename, 
-                  HAS_TABLE_PRIVILEGE(u.usename,'"${schemaName}"."${viewName}"', 'SELECT') as select,
-                  HAS_TABLE_PRIVILEGE(u.usename,'"${schemaName}"."${viewName}"', 'INSERT') as insert,
-                  HAS_TABLE_PRIVILEGE(u.usename,'"${schemaName}"."${viewName}"', 'UPDATE') as update,
-                  HAS_TABLE_PRIVILEGE(u.usename,'"${schemaName}"."${viewName}"', 'DELETE') as delete, 
-                  HAS_TABLE_PRIVILEGE(u.usename,'"${schemaName}"."${viewName}"', 'TRUNCATE') as truncate,
-                  HAS_TABLE_PRIVILEGE(u.usename,'"${schemaName}"."${viewName}"', 'REFERENCES') as references,
-                  HAS_TABLE_PRIVILEGE(u.usename,'"${schemaName}"."${viewName}"', 'TRIGGER') as trigger
-                  FROM pg_views v, pg_user u 
-                  WHERE v.schemaname = '${schemaName}' and v.viewname='${viewName}'`);
-}
+
 export interface MaterializedViewRow {
   id: number;
   schemaname: string;
@@ -323,34 +300,7 @@ export function getMaterializedViews(client: ClientBase, schemas: string[]) {
                   LEFT JOIN pg_description d ON d.objoid = c."oid" AND d.objsubid = 0
                   WHERE schemaname IN ('${schemas.join("','")}')`);
 }
-export interface MaterializedViewPrivilegeRow {
-  schemaname: string;
-  matviewname: string;
-  usename: string;
-  select: boolean;
-  insert: boolean;
-  update: boolean;
-  delete: boolean;
-  truncate: boolean;
-  references: boolean;
-  trigger: boolean;
-}
-export function getMaterializedViewPrivileges(
-  client: ClientBase,
-  schemaName: string,
-  viewName: string,
-) {
-  return client.query<MaterializedViewPrivilegeRow>(`SELECT v.schemaname, v.matviewname, u.usename, 
-                  HAS_TABLE_PRIVILEGE(u.usename,'"${schemaName}"."${viewName}"', 'SELECT') as select,
-                  HAS_TABLE_PRIVILEGE(u.usename,'"${schemaName}"."${viewName}"', 'INSERT') as insert,
-                  HAS_TABLE_PRIVILEGE(u.usename,'"${schemaName}"."${viewName}"', 'UPDATE') as update,
-                  HAS_TABLE_PRIVILEGE(u.usename,'"${schemaName}"."${viewName}"', 'DELETE') as delete, 
-                  HAS_TABLE_PRIVILEGE(u.usename,'"${schemaName}"."${viewName}"', 'TRUNCATE') as truncate,
-                  HAS_TABLE_PRIVILEGE(u.usename,'"${schemaName}"."${viewName}"', 'REFERENCES') as references,
-                  HAS_TABLE_PRIVILEGE(u.usename,'"${schemaName}"."${viewName}"', 'TRIGGER') as trigger
-                  FROM pg_matviews v, pg_user u 
-                  WHERE v.schemaname = '${schemaName}' and v.matviewname='${viewName}'`);
-}
+
 export interface ViewDependencyRow {
   schemaname: string;
   tablename: string;

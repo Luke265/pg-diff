@@ -13,9 +13,7 @@ export function generateCreateMaterializedViewScript(
 
   //Generate privileges script
   const privileges = Object.entries(schema.privileges)
-    .map(([role, obj]) =>
-      generateTableGrantsDefinition(schema.fullName, role, obj),
-    )
+    .map(([role, obj]) => generateTableGrantsDefinition(schema, role, obj))
     .flat()
     .filter((v) => !!v);
   return [

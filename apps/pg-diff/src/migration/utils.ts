@@ -62,12 +62,12 @@ export async function prepareMigrationsHistoryTable(
   };
 
   migrationHistoryTableSchema.owner = config.migrationHistory.tableOwner;
-
+  /*
   let sqlScript = generateCreateTableScript(
     config.migrationHistory.tableName,
     migrationHistoryTableSchema as unknown as TableObject,
   );
-  await pgClient.query(sqlScript.toString());
+  await pgClient.query(sqlScript.toString());*/
 }
 
 export function getPatchFileInfo(filename: string, filepath: string) {
