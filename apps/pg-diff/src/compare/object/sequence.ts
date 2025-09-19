@@ -65,7 +65,9 @@ export function compareSequences(
       lines.push(
         generateCreateSequenceScript(
           sourceObj,
-          config.compareOptions.mapRole(sourceObj.owner),
+          config.compareOptions.replaceRole(
+            config.compareOptions.mapRole(sourceObj.owner),
+          ),
         ),
       );
       if (sourceObj.comment) {
@@ -126,7 +128,9 @@ function compareSequenceDefinition(
     }
     let value = sourceObj + '';
     if (p === 'owner') {
-      value = config.compareOptions.mapRole(sourceObj as string);
+      value = config.compareOptions.replaceRole(
+        config.compareOptions.mapRole(sourceObj as string),
+      );
     }
     lines.push(generateChangeSequencePropertyScript(sequence, p, value));
   }

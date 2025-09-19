@@ -105,7 +105,12 @@ export function compareTables(
 
       const owner = config.compareOptions.mapRole(sourceObj.owner);
       if (owner !== targetObj.owner) {
-        lines.push(generateChangeTableOwnerScript(sourceTable, owner));
+        lines.push(
+          generateChangeTableOwnerScript(
+            sourceTable,
+            config.compareOptions.replaceRole(owner),
+          ),
+        );
       }
       if (!commentIsEqual(sourceObj.comment, targetObj?.comment)) {
         lines.push(
@@ -120,7 +125,7 @@ export function compareTables(
     } else {
       //Table not exists on target database, then generate the script to create table
       addedTables.push(sourceTable);
-      lines.push(generateCreateTableScript(sourceObj, sourceObj));
+      lines.push(generateCreateTableScript(config, sourceObj, sourceObj));
       if (sourceObj.comment) {
         lines.push(
           generateChangeCommentScript(
@@ -547,7 +552,7 @@ export function compareTablePolicies(
       lines.push(
         createPolicy({
           ...sourceObj,
-          roles,
+          roles: roles.map(config.compareOptions.replaceRole),
         }),
       );
     }
@@ -631,8 +636,9 @@ export function compareTablePrivileges(
   const lines: Sql[] = [];
 
   for (const role in sourceTablePrivileges) {
+    const targetRole = config.compareOptions.mapRole(role);
     const source = sourceTablePrivileges[role];
-    const target = targetTablePrivileges[role];
+    const target = targetTablePrivileges[targetRole];
     // In case a list of specific roles hve been configured, the check will only contains those roles eventually.
     if (
       config.compareOptions.schemaCompare.roles.length > 0 &&
@@ -666,21 +672,35 @@ export function compareTablePrivileges(
       if (source.trigger != target.trigger)
         changes.trigger = source.trigger ?? false;
 
-      if (Object.keys(changes).length > 0)
+      if (Object.keys(changes).length > 0) {
         lines.push(
-          ...generateChangesTableRoleGrantsScript(table, role, changes),
+          ...generateChangesTableRoleGrantsScript(
+            table,
+            config.compareOptions.replaceRole(targetRole),
+            changes,
+          ),
         );
+      }
     } else {
       //Table grants for role not exists on target database, then generate script to add role privileges
-      lines.push(...generateTableRoleGrantsScript(table, role, source));
+      lines.push(
+        ...generateTableRoleGrantsScript(
+          table,
+          config.compareOptions.replaceRole(targetRole),
+          source,
+        ),
+      );
     }
   }
 
   for (const role in targetTablePrivileges) {
-    if (!sourceTablePrivileges[role]) {
-      lines.push(generateRevokeAll(table, role));
+    const mappedRole = config.compareOptions.mapRole(role);
+    if (sourceTablePrivileges[mappedRole]) {
       continue;
     }
+    lines.push(
+      generateRevokeAll(table, config.compareOptions.replaceRole(mappedRole)),
+    );
   }
 
   return lines;

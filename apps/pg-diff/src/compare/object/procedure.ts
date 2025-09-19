@@ -43,7 +43,7 @@ export function compareProcedures(
           '',
         );
         if (sourceFunctionDefinition !== targetFunctionDefinition) {
-          const generated = generateCreateProcedureScript(sourceObj);
+          const generated = generateCreateProcedureScript(config, sourceObj);
           if (
             sourceObj.argTypes !== targetObj.argTypes ||
             sourceObj.returnType !== targetObj.returnType
@@ -55,7 +55,12 @@ export function compareProcedures(
           lines.push(generated);
           const owner = config.compareOptions.mapRole(sourceObj.owner);
           if (owner !== targetObj.owner) {
-            lines.push(generateChangeProcedureOwnerScript(sourceObj, owner));
+            lines.push(
+              generateChangeProcedureOwnerScript(
+                sourceObj,
+                config.compareOptions.replaceRole(owner),
+              ),
+            );
           }
           if (sourceObj.comment) {
             lines.push(
@@ -79,7 +84,12 @@ export function compareProcedures(
 
           const owner = config.compareOptions.mapRole(sourceObj.owner);
           if (owner !== targetObj.owner) {
-            lines.push(generateChangeProcedureOwnerScript(sourceObj, owner));
+            lines.push(
+              generateChangeProcedureOwnerScript(
+                sourceObj,
+                config.compareOptions.replaceRole(owner),
+              ),
+            );
           }
 
           if (sourceObj.comment != sourceObj.comment)
@@ -94,11 +104,13 @@ export function compareProcedures(
         }
       } else {
         //Procedure not exists on target database, then generate the script to create procedure
-        lines.push(generateCreateProcedureScript(sourceObj));
+        lines.push(generateCreateProcedureScript(config, sourceObj));
         lines.push(
           generateChangeProcedureOwnerScript(
             sourceObj,
-            config.compareOptions.mapRole(sourceObj.owner),
+            config.compareOptions.replaceRole(
+              config.compareOptions.mapRole(sourceObj.owner),
+            ),
           ),
         );
         if (sourceObj.comment) {
@@ -143,10 +155,10 @@ export function compareProcedurePrivileges(
 ): SqlResult[] {
   const lines: SqlResult[] = [];
 
-  for (const _role in sourceProcedurePrivileges) {
-    const role = config.compareOptions.mapRole(_role);
-    const sourceObj = sourceProcedurePrivileges[_role];
-    const targetObj = targetProcedurePrivileges[role];
+  for (const role in sourceProcedurePrivileges) {
+    const targetRole = config.compareOptions.mapRole(role);
+    const sourceObj = sourceProcedurePrivileges[role];
+    const targetObj = targetProcedurePrivileges[targetRole];
     //Get new or changed role privileges
     if (targetObj) {
       //Procedure privileges for role exists on both database, then compare privileges
@@ -154,12 +166,21 @@ export function compareProcedurePrivileges(
       if (sourceObj.execute !== targetObj.execute) {
         changes.execute = sourceObj.execute;
         lines.push(
-          generateChangesProcedureRoleGrantsScript(schema, role, changes),
+          generateChangesProcedureRoleGrantsScript(
+            schema,
+            config.compareOptions.replaceRole(targetRole),
+            changes,
+          ),
         );
       }
     } else {
       //Procedure grants for role not exists on target database, then generate script to add role privileges
-      lines.push(generateProcedureRoleGrantsScript(schema, role));
+      lines.push(
+        generateProcedureRoleGrantsScript(
+          schema,
+          config.compareOptions.replaceRole(targetRole),
+        ),
+      );
     }
   }
 

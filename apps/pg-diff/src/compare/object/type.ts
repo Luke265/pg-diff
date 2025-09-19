@@ -44,7 +44,12 @@ export function compareTypes(
 
       const owner = config.compareOptions.mapRole(sourceObj.owner);
       if (owner !== targetObj.owner) {
-        sqlScript.push(generateChangeTypeOwnerScript(sourceObj, owner));
+        sqlScript.push(
+          generateChangeTypeOwnerScript(
+            sourceObj,
+            config.compareOptions.replaceRole(owner),
+          ),
+        );
       }
       if (!commentIsEqual(sourceObj.comment, targetObj?.comment)) {
         sqlScript.push(

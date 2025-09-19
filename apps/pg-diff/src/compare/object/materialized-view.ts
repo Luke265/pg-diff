@@ -30,7 +30,7 @@ export function compareMaterializedViews(
         if (!droppedViews.includes(view)) {
           lines.push(generateDropMaterializedViewScript(sourceObj));
         }
-        lines.push(generateCreateMaterializedViewScript(sourceObj));
+        lines.push(generateCreateMaterializedViewScript(config, sourceObj));
         lines.push(
           generateChangeCommentScript(
             sourceObj.id,
@@ -42,7 +42,7 @@ export function compareMaterializedViews(
       } else {
         if (droppedViews.includes(view)) {
           //It will recreate a dropped materialized view because changes happens on involved columns
-          lines.push(generateCreateMaterializedViewScript(sourceObj));
+          lines.push(generateCreateMaterializedViewScript(config, sourceObj));
         }
         lines.push(
           ...compareTableIndexes(
@@ -61,10 +61,14 @@ export function compareMaterializedViews(
           ),
         );
 
-        if (
-          config.compareOptions.mapRole(sourceObj.owner) !== targetObj.owner
-        ) {
-          lines.push(generateChangeTableOwnerScript(view, sourceObj.owner));
+        const owner = config.compareOptions.mapRole(sourceObj.owner);
+        if (owner !== targetObj.owner) {
+          lines.push(
+            generateChangeTableOwnerScript(
+              view,
+              config.compareOptions.replaceRole(owner),
+            ),
+          );
         }
 
         if (sourceObj.comment != targetObj.comment)
@@ -79,7 +83,7 @@ export function compareMaterializedViews(
       }
     } else {
       //Materialized view not exists on target database, then generate the script to create materialized view
-      lines.push(generateCreateMaterializedViewScript(sourceObj));
+      lines.push(generateCreateMaterializedViewScript(config, sourceObj));
       lines.push(
         generateChangeCommentScript(
           sourceObj.id,

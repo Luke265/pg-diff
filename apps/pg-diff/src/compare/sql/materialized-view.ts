@@ -2,8 +2,10 @@ import { statement } from '../stmt.js';
 import { MaterializedViewDefinition } from '../../catalog/database-objects.js';
 import { generateTableGrantsDefinition } from './table.js';
 import { SqlResult } from '../utils.js';
+import { Config } from '../../config.js';
 
 export function generateCreateMaterializedViewScript(
+  config: Config,
   schema: MaterializedViewDefinition,
 ): SqlResult[] {
   //Generate indexes script
@@ -13,7 +15,11 @@ export function generateCreateMaterializedViewScript(
 
   //Generate privileges script
   const privileges = Object.entries(schema.privileges)
-    .map(([role, obj]) => generateTableGrantsDefinition(schema, role, obj))
+    .map(([role, obj]) => {
+      role = config.compareOptions.mapRole(role);
+      role = config.compareOptions.replaceRole(role);
+      return generateTableGrantsDefinition(schema, role, obj);
+    })
     .flat()
     .filter((v) => !!v);
   return [

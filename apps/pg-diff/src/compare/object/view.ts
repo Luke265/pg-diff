@@ -29,7 +29,7 @@ export function compareViews(
       if (sourceViewDefinition != targetViewDefinition) {
         if (!droppedViews.includes(view))
           lines.push(generateDropViewScript(sourceObj));
-        lines.push(generateCreateViewScript(sourceObj));
+        lines.push(generateCreateViewScript(config, sourceObj));
         lines.push(
           generateChangeCommentScript(
             sourceObj.id,
@@ -41,7 +41,7 @@ export function compareViews(
       } else {
         if (droppedViews.includes(view))
           //It will recreate a dropped view because changes happens on involved columns
-          lines.push(generateCreateViewScript(sourceObj));
+          lines.push(generateCreateViewScript(config, sourceObj));
 
         lines.push(
           ...compareTablePrivileges(
@@ -52,10 +52,14 @@ export function compareViews(
           ),
         );
 
-        if (
-          config.compareOptions.mapRole(sourceObj.owner) !== targetObj.owner
-        ) {
-          lines.push(generateChangeTableOwnerScript(view, sourceObj.owner));
+        const owner = config.compareOptions.mapRole(sourceObj.owner);
+        if (owner !== targetObj.owner) {
+          lines.push(
+            generateChangeTableOwnerScript(
+              view,
+              config.compareOptions.replaceRole(owner),
+            ),
+          );
         }
 
         if (sourceObj.comment != targetObj.comment)
@@ -70,7 +74,7 @@ export function compareViews(
       }
     } else {
       //View not exists on target database, then generate the script to create view
-      lines.push(generateCreateViewScript(sourceObj));
+      lines.push(generateCreateViewScript(config, sourceObj));
       lines.push(
         generateChangeCommentScript(
           sourceObj.id,

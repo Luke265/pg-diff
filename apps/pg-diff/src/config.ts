@@ -6,6 +6,7 @@ export interface Config {
     author: string;
     getAuthorFromGit: boolean;
     mapRole: (input: string) => string;
+    replaceRole: (input: string) => string;
     schemaCompare: {
       namespaces: string[];
       sequence: boolean;

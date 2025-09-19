@@ -2,6 +2,7 @@ import { Sql, statement } from '../stmt.js';
 import { FunctionDefinition } from '../../catalog/database-objects.js';
 import { hints } from './misc.js';
 import { replaceLastCharacter, SqlResult } from '../utils.js';
+import { Config } from '../../config.js';
 
 const PROCEDURE_TYPE = {
   p: 'PROCEDURE',
@@ -24,6 +25,7 @@ export function generateProcedureGrantsDefinition(
 }
 
 export function generateCreateProcedureScript(
+  config: Config,
   schema: FunctionDefinition,
 ): Sql[] {
   return [
@@ -32,9 +34,15 @@ export function generateCreateProcedureScript(
       dependencies: schema.fReferenceIds,
       declarations: [schema.id],
     }),
-    ...Object.keys(schema.privileges)
-      .map((role) => generateProcedureGrantsDefinition(schema, role))
-      .filter((n) => !!n),
+    ...(schema.privileges.execute
+      ? Object.keys(schema.privileges)
+          .map((role) => {
+            role = config.compareOptions.mapRole(role);
+            role = config.compareOptions.replaceRole(role);
+            return generateProcedureGrantsDefinition(schema, role);
+          })
+          .filter((n) => !!n)
+      : []),
   ];
 }
 

@@ -10,6 +10,7 @@ import {
 } from '../../catalog/database-objects.js';
 import { generateColumnDefinition } from './column.js';
 import { generateChangeCommentScript, hints } from './misc.js';
+import { Config } from '../../config.js';
 
 export function generateTableGrantsDefinition(
   object: DbObject,
@@ -35,6 +36,7 @@ export function generateTableGrantsDefinition(
 }
 
 export function generateCreateTableScript(
+  config: Config,
   table: TableObject,
   schema: TableObject,
 ) {
@@ -72,7 +74,11 @@ export function generateCreateTableScript(
   );
 
   const privileges = Object.entries(schema.privileges)
-    .map(([role, obj]) => generateTableGrantsDefinition(table, role, obj))
+    .map(([role, obj]) => {
+      role = config.compareOptions.mapRole(role);
+      role = config.compareOptions.replaceRole(role);
+      return generateTableGrantsDefinition(table, role, obj);
+    })
     .flat()
     .filter((v) => !!v);
 
