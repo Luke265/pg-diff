@@ -36,6 +36,9 @@ export async function sync(dir: string) {
         dropMissingAggregate: true,
         roles: [],
       },
+      replaceRole: (role) => {
+        return role;
+      },
     },
   };
   const dbSourceObjects = await collectDatabaseObject(sourceDb(), config);
