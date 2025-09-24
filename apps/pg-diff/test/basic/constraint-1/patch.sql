@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX uniq_post_is_active ON public.post USING btree (is_active) WHERE is_active;

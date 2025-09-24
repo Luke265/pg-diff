@@ -454,7 +454,10 @@ export function compareTableIndexes(
     //Get new or changed indexes
     if (targetObj) {
       //Table index exists on both database, then compare index definition
-      if (sourceObj.definition != targetObj.definition) {
+      if (
+        sourceObj.definition != targetObj.definition ||
+        sourceObj.isUnique != targetObj.isUnique
+      ) {
         if (!droppedIndexes.includes(index)) {
           lines.push(generateDropIndexScript(sourceObj));
         }
@@ -506,14 +509,16 @@ export function compareTableIndexes(
           sql: [sourceObj.definition, ';'],
         }),
       );
-      lines.push(
-        generateChangeCommentScript(
-          sourceObj.id,
-          objectType.INDEX,
-          `"${sourceObj.schema}"."${index}"`,
-          sourceObj.comment,
-        ),
-      );
+      if (sourceObj.comment) {
+        lines.push(
+          generateChangeCommentScript(
+            sourceObj.id,
+            objectType.INDEX,
+            `"${sourceObj.schema}"."${index}"`,
+            sourceObj.comment,
+          ),
+        );
+      }
     }
   }
 

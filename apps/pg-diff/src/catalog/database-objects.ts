@@ -43,6 +43,7 @@ export interface ConstraintDefinition {
 export interface IndexDefinition {
   id: string;
   definition: string;
+  isUnique: boolean;
   comment: string | null;
   schema: string;
   name: string;
