@@ -20,7 +20,7 @@ export function generateCreateViewScript(
   );
   return [
     statement({
-      sql: `CREATE OR REPLACE VIEW ${schema.fullName} AS ${schema.definition};`,
+      sql: `CREATE OR REPLACE VIEW ${schema.fullName} AS ${schema.definition}`,
       declarations: [schema.id],
     }),
     statement({

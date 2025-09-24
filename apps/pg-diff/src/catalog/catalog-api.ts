@@ -60,13 +60,12 @@ export async function retrieveSchemas(
 
 export async function typeColumns(
   client: ClientBase,
-  schema: string,
-  typename: string,
+  table: TableObject | ViewDefinition | Type,
 ): Promise<Column[]> {
   const { rows } = await getTableColumns(
     client,
-    schema,
-    typename,
+    table.schema,
+    table.name,
     await getServerVersion(client),
   );
   return rows.map((row): Column => {
@@ -103,7 +102,8 @@ export async function typeColumns(
     return {
       id: row.id,
       name: row.attname,
-      fullName: `"${schema}"."${typename}"."${row.attname}"`,
+      table,
+      fullName: `${table.fullName}."${row.attname}"`,
       nullable: !row.attnotnull,
       datatype: dataType,
       dataTypeID: row.typeid,
@@ -144,7 +144,7 @@ export async function retrieveTables(client: ClientBase, config: Config) {
         comment: table.comment,
       });
 
-      for (const col of await typeColumns(client, def.schema, def.name)) {
+      for (const col of await typeColumns(client, def)) {
         def.columns[`"${col.name}"`] = col;
       }
 
@@ -221,6 +221,7 @@ export async function retrieveTables(client: ClientBase, config: Config) {
           comment: index.comment,
           name: index.indexname,
           schema: table.schemaname,
+          isUnique: index.isUnique,
         };
       });
 
@@ -315,10 +316,15 @@ export async function retrieveViews(client: ClientBase, config: Config) {
         fullName: fullViewName,
         definition: view.definition,
         owner: view.viewowner,
+        columns: {},
         privileges: {},
         dependencies: [],
         comment: view.comment,
       });
+
+      for (const col of await typeColumns(client, def)) {
+        def.columns[`"${col.name}"`] = col;
+      }
 
       await loadPrivileges(client, config, def);
 
@@ -360,12 +366,17 @@ export async function retrieveMaterializedViews(
         schema: view.schemaname,
         fullName: fullViewName,
         definition: view.definition,
+        columns: {},
         indexes: {},
         owner: view.matviewowner,
         privileges: {},
         dependencies: [],
         comment: view.comment,
       });
+
+      for (const col of await typeColumns(client, def)) {
+        def.columns[`"${col.name}"`] = col;
+      }
 
       const indexes = await getTableIndexes(
         client,
@@ -377,6 +388,7 @@ export async function retrieveMaterializedViews(
           id: index.id,
           name: index.indexname,
           definition: index.indexdef,
+          isUnique: index.isUnique,
           comment: index.comment,
           schema: view.schemaname,
         };
@@ -583,7 +595,7 @@ export async function retrieveTypes(client: ClientBase, config: Config) {
         enum: row.values.length > 0 ? row.values : undefined,
         columns: {},
       });
-      for (const col of await typeColumns(client, def.schema, def.name)) {
+      for (const col of await typeColumns(client, def)) {
         def.columns[`"${col.name}"`] = col;
       }
     }),

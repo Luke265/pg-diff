@@ -57,6 +57,7 @@ export interface ViewDefinition extends DbObject {
   definition: string;
   owner: string;
   privileges: Record<string, Privileges>;
+  columns: Record<string, Column>;
   dependencies: ViewDependency[];
   comment: string | null;
 }
@@ -102,6 +103,7 @@ export interface Column {
   id: string;
   nullable: boolean;
   fullName: string;
+  table: TableObject | ViewDefinition | Type;
   name: string;
   datatype: ColumnType | string;
   dataTypeID: number;
