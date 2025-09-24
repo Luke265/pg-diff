@@ -6,36 +6,19 @@
   "tags": [],
   "targets": {
     "build": {
-      "executor": "@nx/esbuild:esbuild",
+      "executor": "@nx/js:tsc",
       "outputs": ["{options.outputPath}"],
       "defaultConfiguration": "production",
       "options": {
-        "platform": "node",
         "outputPath": "dist/apps/pg-diff",
-        "format": ["esm"],
-        "bundle": false,
+        "rootDir": "apps/pg-diff/src",
         "declaration": true,
-        "declarationRootDir": "apps/pg-diff/src",
         "main": "apps/pg-diff/src/index.ts",
         "tsConfig": "apps/pg-diff/tsconfig.app.json",
-        "generatePackageJson": true,
-        "esbuildOptions": {
-          "sourcemap": true,
-          "outExtension": {
-            ".js": ".js"
-          }
-        }
+        "generatePackageJson": true
       },
       "configurations": {
-        "development": {},
-        "production": {
-          "esbuildOptions": {
-            "sourcemap": false,
-            "outExtension": {
-              ".js": ".js"
-            }
-          }
-        }
+        "development": {}
       }
     },
     "serve": {
@@ -61,14 +44,7 @@
       }
     },
     "deploy": {
-      "executor": "nx:run-commands",
-      "options": {
-        "parallel": false,
-        "commands": [
-          "tsc --project tsconfig.tools.json",
-          "node dist/out-tsc/tools/deploy.js"
-        ]
-      }
+      "command": "node tools/deploy.ts"
     }
   }
 }
