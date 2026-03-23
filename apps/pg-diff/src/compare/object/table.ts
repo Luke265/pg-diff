@@ -13,7 +13,7 @@ import {
   DbObject,
 } from '../../catalog/database-objects.js';
 import { Sql, statement } from '../stmt.js';
-import { commentIsEqual, ColumnChanges } from '../utils.js';
+import { commentIsEqual, ColumnChanges, PrivilegeChange } from '../utils.js';
 import {
   generateAddTableColumnScript,
   generateDropTableColumnScript,
@@ -654,19 +654,12 @@ export function compareTablePrivileges(
     //Get new or changed role privileges
     if (target) {
       //Table privileges for role exists on both database, then compare privileges
-      let changes: ColumnChanges = {};
-
-      if (source.select != target.select)
-        changes.select = source.select ?? false;
-
-      if (source.insert != target.insert)
-        changes.insert = source.insert ?? false;
-
-      if (source.update != target.update)
-        changes.update = source.update ?? false;
-
-      if (source.delete != target.delete)
-        changes.delete = source.delete ?? false;
+      let changes: ColumnChanges = {
+        select: columnGrantChange(source.select, target.select),
+        insert: columnGrantChange(source.insert, target.insert),
+        update: columnGrantChange(source.update, target.update),
+        delete: columnGrantChange(source.delete, target.delete),
+      };
 
       if (source.truncate != target.truncate)
         changes.truncate = source.truncate ?? false;
@@ -709,4 +702,25 @@ export function compareTablePrivileges(
   }
 
   return lines;
+}
+
+function columnGrantChange(
+  source: boolean | string[] | undefined,
+  target: boolean | string[] | undefined,
+): PrivilegeChange | undefined {
+  source ??= false;
+  target ??= false;
+  if (source === target) {
+    return undefined;
+  }
+  if (typeof source === 'boolean' || typeof target === 'boolean') {
+    return {
+      grant: source,
+      revoke: typeof target === 'boolean' ? !source : target,
+    };
+  }
+  return {
+    grant: source.filter((n) => !target.includes(n)),
+    revoke: target.filter((n) => !source.includes(n)),
+  };
 }

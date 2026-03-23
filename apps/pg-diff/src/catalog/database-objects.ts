@@ -14,10 +14,10 @@ export interface FunctionDefinition {
   type: 'f' | 'p';
 }
 export interface Privileges {
-  select?: boolean;
-  insert?: boolean;
-  update?: boolean;
-  delete?: boolean;
+  select?: string[] | boolean;
+  insert?: string[] | boolean;
+  update?: string[] | boolean;
+  delete?: string[] | boolean;
   truncate?: boolean;
   references?: boolean;
   trigger?: boolean;

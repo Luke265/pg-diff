@@ -1,3 +1,6 @@
-REVOKE INSERT ON TABLE "public"."post" FROM dev_pg_diff_part;--WARN: Grant\Revoke privileges to a role can occure in a sql error during execution if role is missing to the target database!
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "public"."post" TO dev_pg_diff;--WARN: Grant\Revoke privileges to a role can occure in a sql error during execution if role is missing to the target database!
+REVOKE INSERT ON TABLE "public"."post" FROM dev_pg_diff_part;--WARN: Grant\Revoke privileges to a role can occure in a sql error during execution if role is missing to the target database!
 REVOKE ALL ON "public"."post" FROM dev_pg_diff_old;--WARN: Grant\Revoke privileges to a role can occure in a sql error during execution if role is missing to the target database!
+REVOKE UPDATE (revoke) ON TABLE "public"."comment" FROM dev_pg_diff;--WARN: Grant\Revoke privileges to a role can occure in a sql error during execution if role is missing to the target database!
+GRANT UPDATE (author_id) ON TABLE "public"."comment" TO dev_pg_diff;--WARN: Grant\Revoke privileges to a role can occure in a sql error during execution if role is missing to the target database!
+GRANT UPDATE (author_id) ON TABLE "public"."add_column_grants" TO dev_pg_diff;--WARN: Grant\Revoke privileges to a role can occure in a sql error during execution if role is missing to the target database!

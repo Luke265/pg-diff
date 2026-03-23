@@ -14,7 +14,7 @@ import {
   generateSequenceRoleGrantsScript,
 } from '../sql/sequence.js';
 import { Sql } from '../stmt.js';
-import { ColumnChanges, SqlResult } from '../utils.js';
+import { SequenceChanges, SqlResult } from '../utils.js';
 
 export function compareSequences(
   config: Config,
@@ -150,7 +150,7 @@ function compareSequencePrivileges(
     //Get new or changed role privileges
     if (targetObj) {
       //Sequence privileges for role exists on both database, then compare privileges
-      let changes: ColumnChanges = {};
+      let changes: SequenceChanges = {};
       if (sourceObj.select != targetObj.select)
         changes.select = sourceObj.select;
 

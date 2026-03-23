@@ -18,10 +18,30 @@ export function generateTableGrantsDefinition(
   privileges: Privileges,
 ): Sql[] {
   return buildGrants([
-    ['SELECT', privileges.select],
-    ['INSERT', privileges.insert],
-    ['UPDATE', privileges.update],
-    ['DELETE', privileges.delete],
+    [
+      'SELECT',
+      privileges.select === undefined
+        ? undefined
+        : { grant: privileges.select, revoke: false },
+    ],
+    [
+      'INSERT',
+      privileges.insert === undefined
+        ? undefined
+        : { grant: privileges.insert, revoke: false },
+    ],
+    [
+      'UPDATE',
+      privileges.update === undefined
+        ? undefined
+        : { grant: privileges.update, revoke: false },
+    ],
+    [
+      'DELETE',
+      privileges.delete === undefined
+        ? undefined
+        : { grant: privileges.delete, revoke: false },
+    ],
     ['TRUNCATE', privileges.truncate],
     ['REFERENCES', privileges.references],
     ['TRIGGER', privileges.trigger],

@@ -240,6 +240,11 @@ WHERE tbln.nspname = '${schemaName}' AND tbl.relname='${tableName}' AND i.indisp
 export interface RolePrivilegeRow {
   grantee: string;
   grantor: string;
+  tableName: string;
+  schemaName: string;
+  // r = ordinary table, i = index, S = sequence, t = TOAST table, v = view, m = materialized view, c = composite type, f = foreign table, p = partitioned table, I = partitioned index
+  kind: 'r' | 'v' | 'm';
+  columns: string[] | null;
   privilegeType:
     | 'SELECT'
     | 'UPDATE'
@@ -250,23 +255,52 @@ export interface RolePrivilegeRow {
     | 'TRIGGER';
 }
 
-export function getPrivileges(
-  client: ClientBase,
-  schemaName: string,
-  relname: string,
-  // r = ordinary table, i = index, S = sequence, t = TOAST table, v = view, m = materialized view, c = composite type, f = foreign table, p = partitioned table, I = partitioned index
-  kind: 'r' | 'v' | 'm',
-) {
-  return client.query<RolePrivilegeRow>(`SELECT
-                      grantee.rolname AS grantee,
-                      grantor.rolname AS grantor,
-                      privilege_type AS "privilegeType"
-                  FROM pg_catalog.pg_class c
-                  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-                  CROSS JOIN LATERAL pg_catalog.aclexplode(c.relacl) acl
-                  JOIN pg_catalog.pg_roles grantee ON acl.grantee = grantee.oid
-                  JOIN pg_catalog.pg_roles grantor ON acl.grantor = grantor.oid
-                  WHERE c.relkind = '${kind}' AND n.nspname = '${schemaName}' and c.relname='${relname}'`);
+export function getPrivileges(client: ClientBase) {
+  return client.query<RolePrivilegeRow>(`WITH tables AS (
+    SELECT
+      c.oid,
+      n.nspname AS schema_name,
+      c.relname AS table_name,
+      c.relkind AS kind,
+      c.relacl
+    FROM pg_catalog.pg_namespace n
+    JOIN pg_catalog.pg_class c ON n.oid = c.relnamespace
+    WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') 
+      AND c.relkind IN ('r', 'v', 'm')
+)
+SELECT
+  schema_name AS "schemaName",
+  table_name AS "tableName",
+  kind,
+  grantor.rolname AS "grantor",
+  grantee.rolname AS "grantee",
+  acl.privilege_type AS "privilegeType",
+  (ARRAY_AGG(col) FILTER (WHERE col IS NOT NULL))::TEXT[] AS "columns"
+FROM (
+  SELECT
+      c.schema_name,
+      c.table_name,
+      c.kind,
+      c.relacl AS acl_array,
+      NULL AS col
+  FROM tables c
+  UNION ALL
+  SELECT
+      c.schema_name,
+      c.table_name,
+      c.kind,
+      a.attacl,
+      a.attname
+  FROM tables c
+  JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid
+  WHERE a.attnum > 0
+    AND NOT a.attisdropped
+    AND a.attacl IS NOT NULL
+) source
+CROSS JOIN LATERAL pg_catalog.aclexplode(acl_array) acl
+JOIN pg_catalog.pg_roles grantee ON acl.grantee = grantee.oid
+JOIN pg_catalog.pg_roles grantor ON acl.grantor = grantor.oid
+GROUP BY table_name, schema_name, kind, grantor.rolname, grantee.rolname, acl.privilege_type`);
 }
 
 export interface ViewRow {
@@ -708,4 +742,37 @@ export function getSequencePrivileges(
                       : ', "' + schemaName + '"."' + sequenceName + '" p'
                   }
                   WHERE s.sequence_schema = '${schemaName}' and s.sequence_name='${sequenceName}'`);
+}
+
+export class Introspect {
+  private readonly privileges = new Map<string, RolePrivilegeRow[]>();
+  constructor(
+    public readonly data: {
+      privileges: RolePrivilegeRow[];
+    },
+  ) {
+    for (const p of data.privileges) {
+      const key = p.schemaName + p.tableName + p.kind;
+      let list = this.privileges.get(key);
+      if (!list) {
+        list = [];
+        this.privileges.set(key, list);
+      }
+      list.push(p);
+    }
+  }
+
+  getPrivilege(
+    schema: string,
+    name: string,
+    kind: string,
+  ): RolePrivilegeRow[] | undefined {
+    return this.privileges.get(schema + name + kind);
+  }
+}
+
+export async function introspect(client: ClientBase): Promise<Introspect> {
+  return new Introspect({
+    privileges: (await getPrivileges(client)).rows,
+  });
 }

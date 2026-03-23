@@ -13,8 +13,10 @@ import {
   retrieveTypes,
   retrieveDomains,
 } from './catalog-api.js';
+import { introspect } from './introspection.js';
 
 export async function loadCatalog(client: ClientBase, config: Config) {
+  const introspection = await introspect(client);
   const dbObjects: DatabaseObjects = {
     schemas: {},
     tables: {},
@@ -29,9 +31,13 @@ export async function loadCatalog(client: ClientBase, config: Config) {
   };
 
   dbObjects.schemas = await retrieveSchemas(client, config.schemas);
-  dbObjects.tables = await retrieveTables(client, config);
-  dbObjects.views = await retrieveViews(client, config);
-  dbObjects.materializedViews = await retrieveMaterializedViews(client, config);
+  dbObjects.tables = await retrieveTables(client, config, introspection);
+  dbObjects.views = await retrieveViews(client, config, introspection);
+  dbObjects.materializedViews = await retrieveMaterializedViews(
+    client,
+    config,
+    introspection,
+  );
   dbObjects.aggregates = await retrieveAggregates(client, config);
   dbObjects.sequences = await retrieveSequences(client, config);
   dbObjects.types = await retrieveTypes(client, config);

@@ -22,6 +22,7 @@ import {
   getDomains,
   getTableTriggers,
   getPrivileges,
+  Introspect,
 } from './introspection.js';
 import {
   AggregateDefinition,
@@ -119,7 +120,11 @@ export async function typeColumns(
   });
 }
 
-export async function retrieveTables(client: ClientBase, config: Config) {
+export async function retrieveTables(
+  client: ClientBase,
+  config: Config,
+  introspection: Introspect,
+) {
   const result: Record<string, TableObject> = {};
   const tableNamesPriority: string[] = [];
   const serverVersion = await getServerVersion(client);
@@ -225,7 +230,7 @@ export async function retrieveTables(client: ClientBase, config: Config) {
         };
       });
 
-      await loadPrivileges(client, config, def);
+      await loadPrivileges(introspection, config, def);
 
       const policies = await getTablePolicies(
         client,
@@ -299,7 +304,11 @@ export async function retrieveTables(client: ClientBase, config: Config) {
   return { ...reorderedResult, ...result };
 }
 
-export async function retrieveViews(client: ClientBase, config: Config) {
+export async function retrieveViews(
+  client: ClientBase,
+  config: Config,
+  introspection: Introspect,
+) {
   const result: Record<string, ViewDefinition> = {};
 
   //Get views
@@ -326,7 +335,7 @@ export async function retrieveViews(client: ClientBase, config: Config) {
         def.columns[`"${col.name}"`] = col;
       }
 
-      await loadPrivileges(client, config, def);
+      await loadPrivileges(introspection, config, def);
 
       const dependencies = await getViewDependencies(
         client,
@@ -353,6 +362,7 @@ export async function retrieveViews(client: ClientBase, config: Config) {
 export async function retrieveMaterializedViews(
   client: ClientBase,
   config: Config,
+  introspection: Introspect,
 ) {
   const result: Record<string, MaterializedViewDefinition> = {};
   const views = await getMaterializedViews(client, config.schemas);
@@ -394,7 +404,7 @@ export async function retrieveMaterializedViews(
         };
       });
 
-      await loadPrivileges(client, config, def);
+      await loadPrivileges(introspection, config, def);
 
       const dependencies = await getViewDependencies(
         client,
@@ -632,17 +642,19 @@ export async function retrieveDomains(client: ClientBase, config: Config) {
 }
 
 async function loadPrivileges(
-  client: ClientBase,
+  introspection: Introspect,
   config: Config,
   table: ViewDefinition | TableObject | MaterializedViewDefinition,
 ) {
-  const privileges = await getPrivileges(
-    client,
+  const privileges = introspection.getPrivilege(
     table.schema,
     table.name,
     table.kind,
   );
-  privileges.rows
+  if (!privileges) {
+    return;
+  }
+  privileges
     .filter(
       (row) => config.roles.length <= 0 || config.roles.includes(row.grantee),
     )
@@ -650,16 +662,16 @@ async function loadPrivileges(
       const d = (table.privileges[privilege.grantee] ??= {});
       switch (privilege.privilegeType) {
         case 'SELECT':
-          d.select = true;
+          d.select = privilege.columns ?? true;
           break;
         case 'UPDATE':
-          d.update = true;
+          d.update = privilege.columns ?? true;
           break;
         case 'INSERT':
-          d.insert = true;
+          d.insert = privilege.columns ?? true;
           break;
         case 'DELETE':
-          d.delete = true;
+          d.delete = privilege.columns ?? true;
           break;
         case 'TRUNCATE':
           d.truncate = true;
