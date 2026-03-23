@@ -67,5 +67,5 @@ export async function sync(dir: string) {
 export async function compare(dir: string) {
   const patch = fs.readFileSync(path.join(dir, 'patch.sql')).toString();
   const resultPatch = await sync(dir);
-  expect(patch).toBe(resultPatch);
+  expect(resultPatch).toBe(patch);
 }
