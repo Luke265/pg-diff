@@ -208,7 +208,7 @@ export function getTableConstraints(
                   LEFT JOIN pg_class f_tbl ON f_tbl.oid = c.confrelid
                   LEFT JOIN pg_namespace f_sch ON f_sch.oid = f_tbl.relnamespace
                   LEFT JOIN pg_description d ON d.objoid = c."oid" AND d.objsubid = 0
-                  WHERE c.conrelid = cl.oid`);
+                  WHERE c.conrelid = cl.oid AND c.contype != 'n'`);
 }
 export interface IndexRow {
   id: string;
